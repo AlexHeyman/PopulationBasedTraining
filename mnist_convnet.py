@@ -31,6 +31,20 @@ class MNISTConvNet:
     """A convolutional neural network for MNIST with two convolutional layers
     and two fully connected layers."""
 
+    x: tf.Tensor
+    y_: tf.Tensor
+    keep_prob: tf.Tensor
+    w_conv1: tf.Variable
+    b_conv1: tf.Variable
+    w_conv2: tf.Variable
+    b_conv2: tf.Variable
+    w_fc1: tf.Variable
+    b_fc1: tf.Variable
+    w_fc2: tf.Variable
+    b_fc2: tf.Variable
+    y: tf.Tensor
+    accuracy: tf.Tensor
+
     def __init__(self):
         self.x = tf.placeholder(tf.float32, [None, 784])
         self.y_ = tf.placeholder(tf.float32, [None, 10])
