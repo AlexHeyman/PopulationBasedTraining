@@ -1,6 +1,5 @@
-"""Trains a single MNIST convnet to minimize cross entropy for 2,000 steps,
-periodically reporting its accuracy and the time spent training it.
-"""
+"""Trains a single MNIST convnet to minimize cross entropy for 10,000 steps,
+periodically reporting its accuracy and the time spent training it."""
 
 import datetime
 import tensorflow as tf
@@ -21,15 +20,16 @@ training_start = None
 training_time = datetime.timedelta()
 
 step_num = 0
-while step_num < 2000:
-    if step_num % 200 == 0:
+while step_num < 10000:
+    if step_num % 100 == 0:
         print("Step", step_num)
-        if training_start is not None:
-            training_time += datetime.datetime.now() - training_start
-        print("Training time:", str(training_time))
-        print("Accuracy: %a" % sess.run(net.accuracy, feed_dict={net.x: mnist.test.images,
-                                                                 net.y_: mnist.test.labels,
-                                                                 net.keep_prob: 1.0}))
+        if step_num % 1000 == 0:
+            if training_start is not None:
+                training_time += datetime.datetime.now() - training_start
+            print("Training time:", str(training_time))
+            print("Accuracy: %a" % sess.run(net.accuracy, feed_dict={net.x: mnist.test.images,
+                                                                     net.y_: mnist.test.labels,
+                                                                     net.keep_prob: 1.0}))
         training_start = datetime.datetime.now()
     batch = mnist.train.next_batch(50)
     sess.run(train_step, feed_dict={net.x: batch[0], net.y_: batch[1], net.keep_prob: 0.5})
