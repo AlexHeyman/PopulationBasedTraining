@@ -1,35 +1,45 @@
-"""A convolutional neural network for MNIST."""
+"""
+A convolutional neural network for MNIST.
+"""
 
 import tensorflow as tf
 
 
 def weight_variable(shape) -> tf.Variable:
-    """Returns a new weight Variable with shape <shape> for an MNIST
-    convnet."""
+    """
+    Returns a new weight Variable with shape <shape> for an MNIST convnet.
+    """
     return tf.Variable(tf.truncated_normal(shape, stddev=0.1))
 
 
 def bias_variable(shape) -> tf.Variable:
-    """Returns a new bias Variable with shape <shape> for an MNIST convnet."""
+    """
+    Returns a new bias Variable with shape <shape> for an MNIST convnet.
+    """
     return tf.Variable(tf.constant(0.1, shape=shape))
 
 
 def conv2d(x, w):
-    """Returns a new conv2d Operation with input <x> and filter <w> for an
-    MNIST convnet."""
+    """
+    Returns a new conv2d Operation with input <x> and filter <w> for an MNIST
+    convnet.
+    """
     return tf.nn.conv2d(x, w, strides=[1, 1, 1, 1], padding="SAME")
 
 
 def max_pool_2x2(x):
-    """Returns a new max-pooling Operation with input <x> for an MNIST
-    convnet."""
+    """
+    Returns a new max-pooling Operation with input <x> for an MNIST convnet.
+    """
     return tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
                           padding="SAME")
 
 
 class MNISTConvNet:
-    """A convolutional neural network for MNIST with two convolutional layers
-    and two fully connected layers."""
+    """
+    A convolutional neural network for MNIST with two convolutional layers and
+    two fully connected layers.
+    """
 
     x: tf.Tensor
     y_: tf.Tensor
@@ -46,6 +56,9 @@ class MNISTConvNet:
     accuracy: tf.Tensor
 
     def __init__(self):
+        """
+        Creates a new MNISTConvNet.
+        """
         self.x = tf.placeholder(tf.float32, [None, 784])
         self.y_ = tf.placeholder(tf.float32, [None, 10])
         self.keep_prob = tf.placeholder(tf.float32)
