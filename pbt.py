@@ -24,7 +24,7 @@ class PBTAbleGraph(Generic[T]):
         represents its effectiveness at its task and allows it to be compared
         to other PBTAbleGraphs with the same task.
 
-        <sess> is the Session on which this PBTAbleGraph is running.
+        <sess> is a Session on which to run and evaluate TensorFlow nodes.
         """
         raise NotImplementedError
 
@@ -32,7 +32,7 @@ class PBTAbleGraph(Generic[T]):
         """
         Executes one step of this PBTAbleGraph's training.
 
-        <sess> is the Session on which this PBTAbleGraph is running.
+        <sess> is a Session on which to run and evaluate TensorFlow nodes.
         """
         raise NotImplementedError
 
@@ -42,7 +42,8 @@ class PBTAbleGraph(Generic[T]):
         PBTAbleGraph to explore a different option, if those actions are judged
         to be currently appropriate.
 
-        <sess> is the Session on which this PBTAbleGraph is running."""
+        <sess> is a Session on which to run and evaluate TensorFlow nodes.
+        """
         raise NotImplementedError
 
 
