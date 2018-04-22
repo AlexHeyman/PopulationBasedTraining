@@ -118,9 +118,9 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
                 new_keep_prob = net_to_copy.keep_prob
                 rand = random.randrange(3)
                 if rand <= 1:
-                    new_learning_rate = random_perturbation(new_learning_rate, 1.2)
+                    new_learning_rate = random_perturbation(new_learning_rate, 1.2, 0.00001, 0.001)
                 if rand >= 1:
-                    new_keep_prob = random_perturbation(new_keep_prob, 1.2, 0, 1)
+                    new_keep_prob = random_perturbation(new_keep_prob, 1.2, 0.1, 1)
                 self.learning_rate.assign(new_learning_rate)
                 self.keep_prob = new_keep_prob
                 self.update_accuracy = True
@@ -131,7 +131,7 @@ def random_mnist_convnet() -> PBTAbleMNISTConvNet:
     Returns a new PBTAbleMNISTConvNet with randomized initial variable values.
     """
     return PBTAbleMNISTConvNet(min(max(random.gauss(0.0001, 0.0001), 0.00001), 0.001),
-                               min(max(random.gauss(0.5, 0.1), 0.1), 0.9))
+                               min(max(random.gauss(0.5, 0.1), 0.1), 1))
 
 
 pop_size = 10
