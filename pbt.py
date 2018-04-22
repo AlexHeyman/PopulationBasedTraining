@@ -14,9 +14,23 @@ class PBTAbleGraph(Generic[T]):
     """
     A TensorFlow graph that a PBTCluster can train.
 
-    A PBTAbleGraph need not have a TensorFlow Graph object all to itself. T is
-    the type of PBTAbleGraph that this PBTAbleGraph forms populations with.
+    A PBTAbleGraph need not have a TensorFlow Graph object all to itself.
+
+    A PBTAbleGraph should create all of the TensorFlow Variables that it uses
+    for its training in its initializer so that if a PBTCluster is supervising
+    its initialization, the PBTCluster can place its Variables on the
+    appropriate device.
+
+    T is the type of PBTAbleGraph that this PBTAbleGraph forms populations
+    with.
     """
+
+    def initialize_variables(self, sess: tf.Session) -> None:
+        """
+        Instructs <sess> to run the initializer Operations of all of the
+        TensorFlow Variables that this PBTAbleGraph created in its initializer.
+        """
+        raise NotImplementedError
 
     def get_metric(self, sess: tf.Session) -> float:
         """
@@ -97,6 +111,12 @@ class PBTCluster(Generic[T]):
     A TensorFlow cluster that can perform population-based training of
     PBTAbleGraphs.
 
+    Any TensorFlow Variables created in the initializers of a PBTCluster's
+    PBTAbleGraphs should be initialized by calling the PBTCluster's
+    initialize_variables() method. Even if such variables are global, they may
+    not be on the proper device to be initialized if a particular Session is
+    instructed to initialize all global variables.
+
     T is the type of PBTAbleGraph that this PBTCluster trains.
     """
 
@@ -108,15 +128,24 @@ class PBTCluster(Generic[T]):
         Creates a new PBTCluster with graphs returned by <graph_maker> as its
         population.
 
-        <addresses> is the list of network addresses of the devices or
-        processes on which this PBTCluster will host its tasks, with each task
-        training one PBTAbleGraph. <graph_maker> is a Callable that returns a
-        new T each time it is called.
+        <addresses> is the list of network addresses of the devices on which
+        this PBTCluster will host its tasks, with each task training one
+        PBTAbleGraph. <graph_maker> is a Callable that returns a new T each
+        time it is called.
         """
         self.cluster = tf.train.ClusterSpec({"worker": addresses})
         self.task_info = []
         for task_index in range(len(addresses)):
             self.task_info.append(PBTClusterTaskInfo[T](self.cluster, task_index, graph_maker))
+
+    def initialize_variables(self):
+        """
+        Initializes all of the TensorFlow Variables that this PBTCluster's
+        PBTAbleGraphs created in their initializers.
+        """
+        chief_sess = self.task_info[0].sess
+        for info in self.task_info:
+            info.graph.initialize_variables(chief_sess)
 
     def get_highest_metric_graph(self) -> T:
         """
