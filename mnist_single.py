@@ -24,7 +24,7 @@ step_num = 0
 while step_num < 10000:
     if step_num % 100 == 0:
         print('Step', step_num)
-        if step_num % 1000 == 0:
+        if step_num % 500 == 0:
             if training_start is not None:
                 training_time += datetime.datetime.now() - training_start
             print('Training time:', str(training_time))
