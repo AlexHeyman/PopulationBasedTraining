@@ -102,6 +102,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         sess.run(self.train_op, feed_dict={self.net.x: batch[0],
                                            self.net.y_: batch[1],
                                            self.net.keep_prob: self.keep_prob})
+        self.update_accuracy = True
 
     def exploit_and_or_explore(self, sess: tf.Session, population: List['PBTAbleMNISTConvNet']) -> None:
         if self.step_num % 500 == 0:
