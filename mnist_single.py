@@ -31,7 +31,7 @@ while step_num < 10000:
             print('Accuracy: %a' % sess.run(net.accuracy, feed_dict={net.x: mnist.test.images,
                                                                      net.y_: mnist.test.labels,
                                                                      net.keep_prob: 1}))
-        training_start = datetime.datetime.now()
+            training_start = datetime.datetime.now()
     batch = mnist.train.next_batch(50)
     sess.run(train_step, feed_dict={net.x: batch[0], net.y_: batch[1], net.keep_prob: 0.5})
     step_num += 1
