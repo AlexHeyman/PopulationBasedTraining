@@ -15,9 +15,8 @@ cross_entropy = tf.reduce_mean(
     tf.nn.softmax_cross_entropy_with_logits(labels=net.y_, logits=net.y))
 train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
 
-tf.initialize_all_variables()
-
 sess = tf.Session()
+sess.run(tf.global_variables_initializer())
 training_start = None
 training_time = datetime.timedelta()
 
