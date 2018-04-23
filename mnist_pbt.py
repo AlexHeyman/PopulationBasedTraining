@@ -1,6 +1,7 @@
 """
 Uses population-based training to train MNIST convnets to minimize cross
-entropy for 10,000 steps each, periodically reporting their accuracy.
+entropy for 10,000 steps each, periodically reporting their accuracy and
+reporting the time spent training them at the end.
 """
 
 from typing import List
@@ -8,7 +9,7 @@ import math
 import random
 import datetime
 import tensorflow as tf
-from pbt import PBTAbleGraph, PBTCluster
+from pbt import PBTAbleGraph, LocalPBTCluster
 from mnist_convnet import MNISTConvNet
 from tensorflow.examples.tutorials.mnist import input_data
 
@@ -103,14 +104,18 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
                                            self.net.y_: batch[1],
                                            self.net.keep_prob: self.keep_prob})
         self.update_accuracy = True
+        self.step_num += 1
 
     def exploit_and_or_explore(self, sess: tf.Session, population: List['PBTAbleMNISTConvNet']) -> None:
         if self.step_num % 500 == 0:
+            print('Net', self.num, 'ranking nets')
             # Rank population by accuracy
             ranked_pop = sorted(population, key=lambda net: net.get_accuracy(sess))
+            print('Net', self.num, 'finished ranking')
             if ranked_pop.index(self) < math.ceil(0.2*len(ranked_pop)):  # In the bottom 20%?
                 # Copy a net from the top 20%
                 net_to_copy = ranked_pop[random.randrange(math.floor(0.8*len(ranked_pop)), len(ranked_pop))]
+                print('Net', self.num, 'copying net', net_to_copy.num)
                 for i in range(len(self.copyable_vars)):
                     self.copyable_vars[i].assign(net_to_copy.copyable_vars[i])
                 # Possibly perturb learning rate and/or keep probability
@@ -124,7 +129,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
                 self.learning_rate.assign(new_learning_rate)
                 self.keep_prob = new_keep_prob
                 self.update_accuracy = True
-        self.step_num += 1
+                print('Net', self.num, 'finished copying')
 
 
 def random_mnist_convnet() -> PBTAbleMNISTConvNet:
@@ -136,9 +141,7 @@ def random_mnist_convnet() -> PBTAbleMNISTConvNet:
 
 
 pop_size = 10
-addresses = ['localhost:' + str(2222 + i) for i in range(pop_size)]
-cluster = PBTCluster[PBTAbleMNISTConvNet](addresses, random_mnist_convnet)
-
+cluster = LocalPBTCluster[PBTAbleMNISTConvNet](pop_size, random_mnist_convnet)
 cluster.initialize_variables()
 training_start = datetime.datetime.now()
 cluster.train(lambda sess, net, population: net.step_num < 10000)
