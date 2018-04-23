@@ -247,8 +247,8 @@ class LocalPBTCluster(Generic[T], PBTCluster[T]):
             i = (i + 1) % len(unfinished_graphs)
             graph = unfinished_graphs[i]
             if training_cond(self.sess, graph, self.population):
-                # Small chance to skip each training step so the "devices"
-                # aren't necessarily perfectly synchronized
+                # Small chance to skip each training step to simulate the
+                # "devices" not necessarily being perfectly synchronized
                 if random.random() < 0.9:
                     graph.train_step(self.sess)
                     graph.exploit_and_or_explore(self.sess, self.population)
