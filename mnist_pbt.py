@@ -119,7 +119,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
                 for i in range(len(self.copyable_vars)):
                     self.copyable_vars[i].assign(net_to_copy.copyable_vars[i])
                 # Possibly perturb learning rate and/or keep probability
-                new_learning_rate = net_to_copy.learning_rate.value()
+                new_learning_rate = sess.run(net_to_copy.learning_rate)
                 new_keep_prob = net_to_copy.keep_prob
                 rand = random.randrange(3)
                 if rand <= 1:
