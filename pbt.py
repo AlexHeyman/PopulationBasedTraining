@@ -191,7 +191,7 @@ class DistPBTCluster(Generic[T], PBTCluster[T]):
                     highest_metric = metric
         return highest_graph
 
-    def train(self, training_cond: Callable[[tf.Session, T, List[T]], bool]) -> None:
+    def train(self, training_cond: Callable[[T, List[T]], bool]) -> None:
         population = []
         threads = []
         for info in self.task_info:
