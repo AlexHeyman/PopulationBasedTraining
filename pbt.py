@@ -26,6 +26,14 @@ class PBTAbleGraph(Generic[T]):
     with.
     """
 
+    sess: tf.Session
+
+    def __init__(self, sess: tf.Session) -> None:
+        """
+        Creates a new PBTAbleGraph with the specified associated Session.
+        """
+        self.sess = sess
+
     def initialize_variables(self, sess: tf.Session) -> None:
         """
         Instructs <sess> to run the initializer Operations of all of the
@@ -33,31 +41,25 @@ class PBTAbleGraph(Generic[T]):
         """
         raise NotImplementedError
 
-    def get_metric(self, sess: tf.Session) -> float:
+    def get_metric(self) -> float:
         """
         Returns a metric for this PBTAbleGraph, typically its accuracy, that
         represents its effectiveness at its task and allows it to be compared
         to other PBTAbleGraphs with the same task.
-
-        <sess> is a Session on which to run and evaluate TensorFlow nodes.
         """
         raise NotImplementedError
 
-    def train_step(self, sess: tf.Session) -> None:
+    def train_step(self) -> None:
         """
         Executes one step of this PBTAbleGraph's training.
-
-        <sess> is a Session on which to run and evaluate TensorFlow nodes.
         """
         raise NotImplementedError
 
-    def exploit_and_or_explore(self, sess: tf.Session, population: List[T]) -> None:
+    def exploit_and_or_explore(self, population: List[T]) -> None:
         """
         Exploits <population> to improve this PBTAbleGraph and/or modifies this
         PBTAbleGraph to explore a different option, if those actions are judged
         to be currently appropriate.
-
-        <sess> is a Session on which to run and evaluate TensorFlow nodes.
         """
         raise NotImplementedError
 
@@ -88,14 +90,13 @@ class PBTCluster(Generic[T]):
         """
         raise NotImplementedError
 
-    def train(self, training_cond: Callable[[tf.Session, T, List[T]], bool]) -> None:
+    def train(self, training_cond: Callable[[T, List[T]], bool]) -> None:
         """
         Performs population-based training on this PBTCluster's population.
 
-        <training_cond> is a Callable that, when passed a PBTAbleGraph's
-        Session, the PBTAbleGraph itself, and this PBTCluster's population,
-        returns whether the training of the specified PBTAbleGraph should
-        continue.
+        <training_cond> is a Callable that, when passed a PBTAbleGraph and this
+        PBTCluster's population, returns whether the training of the specified
+        PBTAbleGraph should continue.
         """
         raise NotImplementedError
 
@@ -113,36 +114,37 @@ class DistTaskInfo(Generic[T]):
     sess: tf.Session
     graph: T
 
-    def __init__(self, cluster: tf.train.ClusterSpec, task_index: int, graph_maker: Callable[[], T]) -> None:
+    def __init__(self, cluster: tf.train.ClusterSpec, task_index: int,
+                 graph_maker: Callable[[tf.Session], T]) -> None:
         """
         Creates a new DistTaskInfo.
 
         <cluster> is the ClusterSpec that describes this DistTaskInfo's
-        DistPBTCluster. <task_index> is the index of the cluster's task that this
-        DistTaskInfo describes. <graph_maker> is a Callable that returns a new
-        T each time it is called.
+        DistPBTCluster. <task_index> is the index of the cluster's task that
+        this DistTaskInfo describes. <graph_maker> is a Callable that returns a
+        new T with the specified Session each time it is called.
         """
         self.name = '/job:worker/task:' + str(task_index)
         self.server = tf.train.Server(cluster, job_name="worker", task_index=task_index)
         self.sess = tf.Session(self.server.target)
         with tf.device(self.name):
-            self.graph = graph_maker()
+            self.graph = graph_maker(self.sess)
 
 
-def pbt_thread(sess: tf.Session, graph: T, population: List[T],
-               training_cond: Callable[[tf.Session, T, List[T]], bool]) -> None:
+def pbt_thread(graph: T, population: List[T],
+               training_cond: Callable[[T, List[T]], bool]) -> None:
     """
     A single thread of a DistPBTCluster's population-based training.
 
-    <graph> is the PBTAbleGraph to be trained. <sess> is the Session on which
-    <graph> is running. <population> is the population of PBTAbleGraphs to
-    which <graph> belongs. T is the type of PBTAbleGraph of which <population>
-    consists. <training_cond> is a Callable that, when passed <sess>, <graph>,
-    and <population>, returns whether the training should continue.
+    <graph> is the PBTAbleGraph to be trained. <population> is the population
+    of PBTAbleGraphs to which <graph> belongs. T is the type of PBTAbleGraph of
+    which <population> consists. <training_cond> is a Callable that, when
+    passed <graph> and <population> returns whether the training should
+    continue.
     """
-    while training_cond(sess, graph, population):
-        graph.train_step(sess)
-        graph.exploit_and_or_explore(sess, population)
+    while training_cond(graph, population):
+        graph.train_step()
+        graph.exploit_and_or_explore(population)
 
 
 class DistPBTCluster(Generic[T], PBTCluster[T]):
@@ -154,15 +156,15 @@ class DistPBTCluster(Generic[T], PBTCluster[T]):
     cluster: tf.train.ClusterSpec
     task_info: List[DistTaskInfo[T]]
 
-    def __init__(self, addresses: List[str], graph_maker: Callable[[], T]) -> None:
+    def __init__(self, addresses: List[str], graph_maker: Callable[[tf.Session], T]) -> None:
         """
         Creates a new DistPBTCluster with graphs returned by <graph_maker> as
         its population.
 
         <addresses> is the list of network addresses of the devices on which
         this DistPBTCluster will host its tasks, with each task training one
-        PBTAbleGraph. <graph_maker> is a Callable that returns a new T each
-        time it is called.
+        PBTAbleGraph. <graph_maker> is a Callable that returns a new T with the
+        specified Session each time it is called.
         """
         self.cluster = tf.train.ClusterSpec({"worker": addresses})
         self.task_info = []
@@ -181,9 +183,9 @@ class DistPBTCluster(Generic[T], PBTCluster[T]):
             graph = info.graph
             if highest_graph is None:
                 highest_graph = graph
-                highest_metric = graph.get_metric(info.sess)
+                highest_metric = graph.get_metric()
             else:
-                metric = graph.get_metric(info.sess)
+                metric = graph.get_metric()
                 if metric > highest_metric:
                     highest_graph = graph
                     highest_metric = metric
@@ -195,7 +197,7 @@ class DistPBTCluster(Generic[T], PBTCluster[T]):
         for info in self.task_info:
             population.append(info.graph)
             threads.append(Thread(target=pbt_thread, name='PBT thread for ' + info.name,
-                                  args=(info.sess, info.graph, population, training_cond), daemon=True))
+                                  args=(info.graph, population, training_cond), daemon=True))
         for thread in threads:
             thread.start()
         for thread in threads:
@@ -207,20 +209,20 @@ class LocalPBTCluster(Generic[T], PBTCluster[T]):
     A PBTCluster that simulates parallel training with a single local thread.
     """
 
-    population: List[T]
     sess: tf.Session
+    population: List[T]
 
-    def __init__(self, pop_size: int, graph_maker: Callable[[], T]) -> None:
+    def __init__(self, pop_size: int, graph_maker: Callable[[tf.Session], T]) -> None:
         """
         Creates a new LocalPBTCluster with <pop_size> graphs returned by
         <graph_maker> as its population.
 
         <pop_size> is the number of PBTAbleGraphs that will make up this
         LocalPBTCluster's population. <graph_maker> is a Callable that returns
-        a new T each time it is called.
+        a new T with the specified Session each time it is called.
         """
-        self.population = [graph_maker() for _ in range(pop_size)]
         self.sess = tf.Session()
+        self.population = [graph_maker(self.sess) for _ in range(pop_size)]
 
     def initialize_variables(self):
         for graph in self.population:
@@ -232,26 +234,26 @@ class LocalPBTCluster(Generic[T], PBTCluster[T]):
         for graph in self.population:
             if highest_graph is None:
                 highest_graph = graph
-                highest_metric = graph.get_metric(self.sess)
+                highest_metric = graph.get_metric()
             else:
-                metric = graph.get_metric(self.sess)
+                metric = graph.get_metric()
                 if metric > highest_metric:
                     highest_graph = graph
                     highest_metric = metric
         return highest_graph
 
-    def train(self, training_cond: Callable[[tf.Session, T, List[T]], bool]) -> None:
+    def train(self, training_cond: Callable[[T, List[T]], bool]) -> None:
         unfinished_graphs = list(self.population)
         i = -1
         while len(unfinished_graphs) > 0:
             i = (i + 1) % len(unfinished_graphs)
             graph = unfinished_graphs[i]
-            if training_cond(self.sess, graph, self.population):
+            if training_cond(graph, self.population):
                 # Small chance to skip each training step to simulate the
                 # "devices" not necessarily being perfectly synchronized
                 if random.random() < 0.9:
-                    graph.train_step(self.sess)
-                    graph.exploit_and_or_explore(self.sess, self.population)
+                    graph.train_step()
+                    graph.exploit_and_or_explore(self.population)
             else:
                 unfinished_graphs.pop(i)
                 i -= 1

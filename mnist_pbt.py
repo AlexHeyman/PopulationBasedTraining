@@ -51,13 +51,13 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
     accuracy: float
     update_accuracy: bool
 
-    def __init__(self, learning_rate: float, keep_prob: float) -> None:
+    def __init__(self, sess: tf.Session, learning_rate: float, keep_prob: float) -> None:
         """
-        Creates a new PBTAbleMNISTConvNet with initial learning rate
-        <learning_rate> and dropout keep probability <keep_prob>.
+        Creates a new PBTAbleMNISTConvNet with Session <sess>, initial learning
+        rate <learning_rate>, and dropout keep probability <keep_prob>.
         """
         global num_nets
-        super().__init__()
+        super().__init__(sess)
         self.num = num_nets
         num_nets += 1
         self.net = MNISTConvNet()
@@ -81,36 +81,36 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         sess.run([var.initializer for var in self.copyable_vars])
         sess.run(self.learning_rate.initializer)
 
-    def get_accuracy(self, sess: tf.Session) -> float:
+    def get_accuracy(self) -> float:
         """
         Returns this PBTAbleMNISTConvNet's accuracy score on the MNIST test
         data set.
         """
         if self.update_accuracy:
-            self.accuracy = sess.run(self.net.accuracy, feed_dict={self.net.x: mnist.test.images,
-                                                                   self.net.y_: mnist.test.labels,
-                                                                   self.net.keep_prob: 1})
+            self.accuracy = self.sess.run(self.net.accuracy, feed_dict={self.net.x: mnist.test.images,
+                                                                        self.net.y_: mnist.test.labels,
+                                                                        self.net.keep_prob: 1})
             self.update_accuracy = False
         return self.accuracy
 
-    def get_metric(self, sess: tf.Session) -> float:
-        return self.get_accuracy(sess)
+    def get_metric(self) -> float:
+        return self.get_accuracy()
 
-    def train_step(self, sess: tf.Session) -> None:
+    def train_step(self) -> None:
         if self.step_num % 100 == 0:
             print('Net', self.num, 'step', self.step_num)
         batch = mnist.train.next_batch(50)
-        sess.run(self.train_op, feed_dict={self.net.x: batch[0],
-                                           self.net.y_: batch[1],
-                                           self.net.keep_prob: self.keep_prob})
+        self.sess.run(self.train_op, feed_dict={self.net.x: batch[0],
+                                                self.net.y_: batch[1],
+                                                self.net.keep_prob: self.keep_prob})
         self.update_accuracy = True
         self.step_num += 1
 
-    def exploit_and_or_explore(self, sess: tf.Session, population: List['PBTAbleMNISTConvNet']) -> None:
+    def exploit_and_or_explore(self, population: List['PBTAbleMNISTConvNet']) -> None:
         if self.step_num % 500 == 0:
             print('Net', self.num, 'ranking nets')
             # Rank population by accuracy
-            ranked_pop = sorted(population, key=lambda net: net.get_accuracy(sess))
+            ranked_pop = sorted(population, key=lambda net: net.get_accuracy())
             print('Net', self.num, 'finished ranking')
             if ranked_pop.index(self) < math.ceil(0.2*len(ranked_pop)):  # In the bottom 20%?
                 # Copy a net from the top 20%
@@ -119,7 +119,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
                 for i in range(len(self.copyable_vars)):
                     self.copyable_vars[i].assign(net_to_copy.copyable_vars[i])
                 # Possibly perturb learning rate and/or keep probability
-                new_learning_rate = sess.run(net_to_copy.learning_rate)
+                new_learning_rate = net_to_copy.sess.run(net_to_copy.learning_rate)
                 new_keep_prob = net_to_copy.keep_prob
                 rand = random.randrange(3)
                 if rand <= 1:
@@ -132,11 +132,12 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
                 print('Net', self.num, 'finished copying')
 
 
-def random_mnist_convnet() -> PBTAbleMNISTConvNet:
+def random_mnist_convnet(sess: tf.Session) -> PBTAbleMNISTConvNet:
     """
-    Returns a new PBTAbleMNISTConvNet with randomized initial variable values.
+    Returns a new PBTAbleMNISTConvNet with the specified Session and randomized
+    initial variable values.
     """
-    return PBTAbleMNISTConvNet(min(max(random.gauss(0.0001, 0.0001), 0.00001), 0.001),
+    return PBTAbleMNISTConvNet(sess, min(max(random.gauss(0.0001, 0.0001), 0.00001), 0.001),
                                min(max(random.gauss(0.5, 0.1), 0.1), 1))
 
 
@@ -144,6 +145,6 @@ pop_size = 10
 cluster = LocalPBTCluster[PBTAbleMNISTConvNet](pop_size, random_mnist_convnet)
 cluster.initialize_variables()
 training_start = datetime.datetime.now()
-cluster.train(lambda sess, net, population: net.step_num < 10000)
+cluster.train(lambda net, population: net.step_num < 10000)
 print('Training time:', datetime.datetime.now() - training_start)
-print('Highest accuracy:', cluster.get_highest_metric_graph().get_accuracy(cluster.sess))
+print('Highest accuracy:', cluster.get_highest_metric_graph().get_accuracy())
