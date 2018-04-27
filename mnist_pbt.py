@@ -1,7 +1,6 @@
 """
 Uses population-based training to train MNIST convnets to minimize cross
-entropy for 10,000 steps each, periodically reporting their accuracy and
-reporting the time spent training them at the end.
+entropy for 10,000 steps each, reporting relevant information at the end.
 """
 
 from typing import List
@@ -117,7 +116,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         Prints this PBTAbleMNISTConvNet's hyperparameter update history to the
         console.
         """
-        print("Net", self.num, "hyperparameter update history")
+        print('Net', self.num, 'hyperparameter update history:')
         updates = []
         update = self.last_update
         while update is not None:
@@ -125,9 +124,9 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
             update = update.prev
         while len(updates) > 0:
             update = updates.pop()
-            print("Step", update.step_num)
-            print("Learning rate:", update.learning_rate)
-            print("Keep probability:", update.keep_prob)
+            print('Step', update.step_num)
+            print('Learning rate:', update.learning_rate)
+            print('Keep probability:', update.keep_prob)
 
     def get_accuracy(self) -> float:
         """
@@ -187,8 +186,8 @@ def random_mnist_convnet(sess: tf.Session) -> PBTAbleMNISTConvNet:
     Returns a new PBTAbleMNISTConvNet with the specified Session and randomized
     initial variable values.
     """
-    return PBTAbleMNISTConvNet(sess, min(max(random.gauss(0.0001, 0.0001), 0.00001), 0.001),
-                               min(max(random.gauss(0.5, 0.1), 0.1), 1))
+    return PBTAbleMNISTConvNet(sess, 10 ** min(max(random.gauss(-4, 0.5), -5), -3),
+                               min(max(random.gauss(0.5, 0.2), 0.1), 1))
 
 
 pop_size = 10
@@ -200,5 +199,6 @@ print('Training time:', datetime.datetime.now() - training_start)
 print('Highest accuracy:', cluster.get_highest_metric_graph().get_accuracy())
 print()
 for net in cluster.get_population():
+    print('Net', net.num, 'accuracy:', net.get_accuracy())
     net.print_update_history()
     print()
