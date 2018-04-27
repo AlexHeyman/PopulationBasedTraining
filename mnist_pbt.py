@@ -31,6 +31,27 @@ def random_perturbation(value: float, factor: float, min_val: float = None, max_
     return value
 
 
+class NetUpdate:
+    """
+    Stores information about a PBTAbleMNISTConvNet's update of its
+    hyperparameters.
+    """
+
+    prev: 'NetUpdate'
+    step_num: int
+    learning_rate: float
+    keep_prob: float
+
+    def __init__(self, net: 'PBTAbleMNISTConvNet') -> None:
+        """
+        Creates a new NetUpdate that stores <net>'s current information.
+        """
+        self.prev = net.last_update
+        self.step_num = net.step_num
+        self.learning_rate = net.sess.run(net.learning_rate)
+        self.keep_prob = net.keep_prob
+
+
 mnist = input_data.read_data_sets('MNIST_data/', one_hot=True)
 num_nets = 0
 
@@ -50,6 +71,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
     step_num: int
     accuracy: float
     update_accuracy: bool
+    last_update: NetUpdate
 
     def __init__(self, sess: tf.Session, learning_rate: float, keep_prob: float) -> None:
         """
@@ -76,10 +98,36 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         self.step_num = 0
         self.accuracy = 0
         self.update_accuracy = True
+        self.last_update = None
 
     def initialize_variables(self, sess: tf.Session) -> None:
         sess.run([var.initializer for var in self.copyable_vars])
         sess.run(self.learning_rate.initializer)
+        self.record_update()
+
+    def record_update(self):
+        """
+        Records the update to this PBTAbleMNISTConvNet's hyperparameters that
+        occurred immediately prior.
+        """
+        self.last_update = NetUpdate(self)
+
+    def print_update_history(self):
+        """
+        Prints this PBTAbleMNISTConvNet's hyperparameter update history to the
+        console.
+        """
+        print("Net", self.num, "hyperparameter update history")
+        updates = []
+        update = self.last_update
+        while update is not None:
+            updates.append(update)
+            update = update.prev
+        while len(updates) > 0:
+            update = updates.pop()
+            print("Step", update.step_num)
+            print("Learning rate:", update.learning_rate)
+            print("Keep probability:", update.keep_prob)
 
     def get_accuracy(self) -> float:
         """
@@ -129,6 +177,8 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
                 self.learning_rate.assign(new_learning_rate)
                 self.keep_prob = new_keep_prob
                 self.update_accuracy = True
+                self.last_update = net_to_copy.last_update
+                self.record_update()
                 print('Net', self.num, 'finished copying')
 
 
@@ -148,3 +198,7 @@ training_start = datetime.datetime.now()
 cluster.train(lambda net, population: net.step_num < 10000)
 print('Training time:', datetime.datetime.now() - training_start)
 print('Highest accuracy:', cluster.get_highest_metric_graph().get_accuracy())
+print()
+for net in cluster.get_population():
+    net.print_update_history()
+    print()
