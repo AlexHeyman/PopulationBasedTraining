@@ -77,7 +77,15 @@ class PBTCluster(Generic[T]):
     T is the type of PBTAbleGraph that this PBTCluster trains.
     """
 
-    def initialize_variables(self):
+    def get_population(self) -> List[T]:
+        """
+        Returns this PBTCluster's population of PBTAbleGraphs.
+
+        The returned list should not be modified.
+        """
+        raise NotImplementedError
+
+    def initialize_variables(self) -> None:
         """
         Initializes all of the TensorFlow Variables that this PBTCluster's
         PBTAbleGraphs created in their initializers.
@@ -171,6 +179,9 @@ class DistPBTCluster(Generic[T], PBTCluster[T]):
         for task_index in range(len(addresses)):
             self.task_info.append(DistTaskInfo[T](self.cluster, task_index, graph_maker))
 
+    def get_population(self) -> List[T]:
+        return [info.graph for info in self.task_info]
+
     def initialize_variables(self):
         chief_sess = self.task_info[0].sess
         for info in self.task_info:
@@ -223,6 +234,9 @@ class LocalPBTCluster(Generic[T], PBTCluster[T]):
         """
         self.sess = tf.Session()
         self.population = [graph_maker(self.sess) for _ in range(pop_size)]
+
+    def get_population(self) -> List[T]:
+        return self.population
 
     def initialize_variables(self):
         for graph in self.population:
