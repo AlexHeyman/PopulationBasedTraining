@@ -196,9 +196,8 @@ cluster.initialize_variables()
 training_start = datetime.datetime.now()
 cluster.train(lambda net, population: net.step_num < 10000)
 print('Training time:', datetime.datetime.now() - training_start)
-print('Highest accuracy:', cluster.get_highest_metric_graph().get_accuracy())
 print()
-for net in cluster.get_population():
+for net in reversed(sorted(cluster.get_population(), key=lambda net: net.get_accuracy())):
     print('Net', net.num, 'accuracy:', net.get_accuracy())
     net.print_update_history()
     print()
