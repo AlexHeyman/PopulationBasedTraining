@@ -164,7 +164,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
                 net_to_copy = ranked_pop[random.randrange(math.floor(0.8*len(ranked_pop)), len(ranked_pop))]
                 print('Net', self.num, 'copying net', net_to_copy.num)
                 for i in range(len(self.copyable_vars)):
-                    self.copyable_vars[i].assign(net_to_copy.copyable_vars[i])
+                    self.sess.run(self.copyable_vars[i].assign(net_to_copy.copyable_vars[i]))
                 # Possibly perturb learning rate and/or keep probability
                 new_learning_rate = net_to_copy.sess.run(net_to_copy.learning_rate)
                 new_keep_prob = net_to_copy.keep_prob
@@ -173,7 +173,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
                     new_learning_rate = random_perturbation(new_learning_rate, 1.2, 0.00001, 0.001)
                 if rand >= 1:
                     new_keep_prob = random_perturbation(new_keep_prob, 1.2, 0.1, 1)
-                self.learning_rate.assign(new_learning_rate)
+                self.sess.run(self.learning_rate.assign(new_learning_rate))
                 self.keep_prob = new_keep_prob
                 self.update_accuracy = True
                 self.last_update = net_to_copy.last_update
