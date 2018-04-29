@@ -175,6 +175,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
                     new_keep_prob = random_perturbation(new_keep_prob, 1.2, 0.1, 1)
                 self.sess.run(self.learning_rate.assign(new_learning_rate))
                 self.keep_prob = new_keep_prob
+                self.step_num = net_to_copy.step_num
                 self.update_accuracy = True
                 self.last_update = net_to_copy.last_update
                 self.record_update()
