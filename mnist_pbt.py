@@ -153,33 +153,35 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         self.update_accuracy = True
         self.step_num += 1
 
+    def is_ready(self):
+        return self.step_num % 500 == 0
+
     def exploit_and_or_explore(self, population: List['PBTAbleMNISTConvNet']) -> None:
-        if self.step_num % 500 == 0:
-            print('Net', self.num, 'ranking nets')
-            # Rank population by accuracy
-            ranked_pop = sorted(population, key=lambda net: net.get_accuracy())
-            print('Net', self.num, 'finished ranking')
-            if ranked_pop.index(self) < math.ceil(0.2*len(ranked_pop)):  # In the bottom 20%?
-                # Copy a net from the top 20%
-                net_to_copy = ranked_pop[random.randrange(math.floor(0.8*len(ranked_pop)), len(ranked_pop))]
-                print('Net', self.num, 'copying net', net_to_copy.num)
-                for i in range(len(self.copyable_vars)):
-                    self.sess.run(self.copyable_vars[i].assign(net_to_copy.copyable_vars[i]))
-                # Possibly perturb learning rate and/or keep probability
-                new_learning_rate = net_to_copy.sess.run(net_to_copy.learning_rate)
-                new_keep_prob = net_to_copy.keep_prob
-                rand = random.randrange(3)
-                if rand <= 1:
-                    new_learning_rate = random_perturbation(new_learning_rate, 1.2, 0.00001, 0.001)
-                if rand >= 1:
-                    new_keep_prob = random_perturbation(new_keep_prob, 1.2, 0.1, 1)
-                self.sess.run(self.learning_rate.assign(new_learning_rate))
-                self.keep_prob = new_keep_prob
-                self.step_num = net_to_copy.step_num
-                self.update_accuracy = True
-                self.last_update = net_to_copy.last_update
-                self.record_update()
-                print('Net', self.num, 'finished copying')
+        print('Net', self.num, 'ranking nets')
+        # Rank population by accuracy
+        ranked_pop = sorted(population, key=lambda net: net.get_accuracy())
+        print('Net', self.num, 'finished ranking')
+        if ranked_pop.index(self) < math.ceil(0.2*len(ranked_pop)):  # In the bottom 20%?
+            # Copy a net from the top 20%
+            net_to_copy = ranked_pop[random.randrange(math.floor(0.8*len(ranked_pop)), len(ranked_pop))]
+            print('Net', self.num, 'copying net', net_to_copy.num)
+            for i in range(len(self.copyable_vars)):
+                self.sess.run(self.copyable_vars[i].assign(net_to_copy.copyable_vars[i]))
+            # Possibly perturb learning rate and/or keep probability
+            new_learning_rate = net_to_copy.sess.run(net_to_copy.learning_rate)
+            new_keep_prob = net_to_copy.keep_prob
+            rand = random.randrange(3)
+            if rand <= 1:
+                new_learning_rate = random_perturbation(new_learning_rate, 1.2, 0.00001, 0.001)
+            if rand >= 1:
+                new_keep_prob = random_perturbation(new_keep_prob, 1.2, 0.1, 1)
+            self.sess.run(self.learning_rate.assign(new_learning_rate))
+            self.keep_prob = new_keep_prob
+            self.step_num = net_to_copy.step_num
+            self.update_accuracy = True
+            self.last_update = net_to_copy.last_update
+            self.record_update()
+            print('Net', self.num, 'finished copying')
 
 
 def random_mnist_convnet(sess: tf.Session) -> PBTAbleMNISTConvNet:

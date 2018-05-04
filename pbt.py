@@ -55,11 +55,18 @@ class PBTAbleGraph(Generic[T]):
         """
         raise NotImplementedError
 
+    def is_ready(self) -> bool:
+        """
+        Returns whether this PBTAbleGraph is ready to use the rest of its
+        population to decide whether to exploit and/or explore.
+        """
+        raise NotImplementedError
+
     def exploit_and_or_explore(self, population: List[T]) -> None:
         """
         Exploits <population> to improve this PBTAbleGraph and/or modifies this
         PBTAbleGraph to explore a different option, if those actions are judged
-        to be currently appropriate.
+        to be currently necessary.
         """
         raise NotImplementedError
 
@@ -152,7 +159,8 @@ def pbt_thread(graph: T, population: List[T],
     """
     while training_cond(graph, population):
         graph.train_step()
-        graph.exploit_and_or_explore(population)
+        if graph.is_ready():
+            graph.exploit_and_or_explore(population)
 
 
 class DistPBTCluster(Generic[T], PBTCluster[T]):
@@ -267,7 +275,8 @@ class LocalPBTCluster(Generic[T], PBTCluster[T]):
                 # "devices" not necessarily being perfectly synchronized
                 if random.random() < 0.9:
                     graph.train_step()
-                    graph.exploit_and_or_explore(self.population)
+                    if graph.is_ready():
+                        graph.exploit_and_or_explore(self.population)
             else:
                 unfinished_graphs.pop(i)
                 i -= 1
