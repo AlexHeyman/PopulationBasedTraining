@@ -1,14 +1,13 @@
 """
-Uses population-based training to train MNIST convnets to minimize cross
-entropy for 10,000 steps each, reporting relevant information at the end.
+A convolutional neural network for MNIST that is compatible with
+population-based training.
 """
 
 from typing import List
 import math
 import random
-import datetime
 import tensorflow as tf
-from pbt import PBTAbleGraph, LocalPBTCluster
+from pbt import PBTAbleGraph
 from mnist_convnet import MNISTConvNet
 from tensorflow.examples.tutorials.mnist import input_data
 
@@ -102,13 +101,9 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
     def initialize_variables(self, sess: tf.Session) -> None:
         sess.run([var.initializer for var in self.copyable_vars])
         sess.run(self.learning_rate.initializer)
-        self.record_update()
+        self._record_update()
 
-    def record_update(self):
-        """
-        Records the update to this PBTAbleMNISTConvNet's hyperparameters that
-        occurred immediately prior.
-        """
+    def _record_update(self):
         self.last_update = NetUpdate(self)
 
     def print_update_history(self):
@@ -180,7 +175,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
             self.step_num = net_to_copy.step_num
             self.update_accuracy = True
             self.last_update = net_to_copy.last_update
-            self.record_update()
+            self._record_update()
             print('Net', self.num, 'finished copying')
 
 
@@ -191,16 +186,3 @@ def random_mnist_convnet(sess: tf.Session) -> PBTAbleMNISTConvNet:
     """
     return PBTAbleMNISTConvNet(sess, 10 ** min(max(random.gauss(-4, 0.5), -5), -3),
                                min(max(random.gauss(0.5, 0.2), 0.1), 1))
-
-
-pop_size = 10
-cluster = LocalPBTCluster[PBTAbleMNISTConvNet](pop_size, random_mnist_convnet)
-cluster.initialize_variables()
-training_start = datetime.datetime.now()
-cluster.train(lambda net, population: net.step_num < 10000)
-print('Training time:', datetime.datetime.now() - training_start)
-print()
-for net in reversed(sorted(cluster.get_population(), key=lambda net: net.get_accuracy())):
-    print('Net', net.num, 'accuracy:', net.get_accuracy())
-    net.print_update_history()
-    print()

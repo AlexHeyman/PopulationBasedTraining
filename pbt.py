@@ -46,12 +46,13 @@ class PBTAbleGraph(Generic[T]):
     def run(self, fetches, feed_dict=None, options=None, run_metadata=None):
         """
         Calls this PBTAbleGraph's Session's run() method with the specified
-        parameters, blocking beforehand until any other invocations of this
-        method in other threads have finished.
+        parameters and returns its return value, blocking beforehand until any
+        other invocations of this method in other threads have finished.
         """
         self.sess_lock.acquire()
-        self.sess.run(fetches, feed_dict, options, run_metadata)
+        value = self.sess.run(fetches, feed_dict, options, run_metadata)
         self.sess_lock.release()
+        return value
 
     def get_metric(self) -> float:
         """
