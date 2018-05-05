@@ -5,7 +5,7 @@ TensorFlow.
 
 from typing import List, Callable, TypeVar, Generic
 import random
-from threading import Thread
+from threading import Thread, Lock
 import tensorflow as tf
 
 T = TypeVar('T', bound='PBTAbleGraph')
@@ -27,12 +27,14 @@ class PBTAbleGraph(Generic[T]):
     """
 
     sess: tf.Session
+    sess_lock: Lock
 
     def __init__(self, sess: tf.Session) -> None:
         """
         Creates a new PBTAbleGraph with the specified associated Session.
         """
         self.sess = sess
+        self.sess_lock = Lock()
 
     def initialize_variables(self, sess: tf.Session) -> None:
         """
@@ -40,6 +42,16 @@ class PBTAbleGraph(Generic[T]):
         TensorFlow Variables that this PBTAbleGraph created in its initializer.
         """
         raise NotImplementedError
+
+    def run(self, fetches, feed_dict=None, options=None, run_metadata=None):
+        """
+        Calls this PBTAbleGraph's Session's run() method with the specified
+        parameters, blocking beforehand until any other invocations of this
+        method in other threads have finished.
+        """
+        self.sess_lock.acquire()
+        self.sess.run(fetches, feed_dict, options, run_metadata)
+        self.sess_lock.release()
 
     def get_metric(self) -> float:
         """

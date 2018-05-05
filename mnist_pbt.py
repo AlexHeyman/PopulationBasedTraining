@@ -47,7 +47,7 @@ class NetUpdate:
         """
         self.prev = net.last_update
         self.step_num = net.step_num
-        self.learning_rate = net.sess.run(net.learning_rate)
+        self.learning_rate = net.run(net.learning_rate)
         self.keep_prob = net.keep_prob
 
 
@@ -134,9 +134,9 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         data set.
         """
         if self.update_accuracy:
-            self.accuracy = self.sess.run(self.net.accuracy, feed_dict={self.net.x: mnist.test.images,
-                                                                        self.net.y_: mnist.test.labels,
-                                                                        self.net.keep_prob: 1})
+            self.accuracy = self.run(self.net.accuracy, feed_dict={self.net.x: mnist.test.images,
+                                                                   self.net.y_: mnist.test.labels,
+                                                                   self.net.keep_prob: 1})
             self.update_accuracy = False
         return self.accuracy
 
@@ -147,9 +147,9 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         if self.step_num % 100 == 0:
             print('Net', self.num, 'step', self.step_num)
         batch = mnist.train.next_batch(50)
-        self.sess.run(self.train_op, feed_dict={self.net.x: batch[0],
-                                                self.net.y_: batch[1],
-                                                self.net.keep_prob: self.keep_prob})
+        self.run(self.train_op, feed_dict={self.net.x: batch[0],
+                                           self.net.y_: batch[1],
+                                           self.net.keep_prob: self.keep_prob})
         self.update_accuracy = True
         self.step_num += 1
 
@@ -166,16 +166,16 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
             net_to_copy = ranked_pop[random.randrange(math.floor(0.8*len(ranked_pop)), len(ranked_pop))]
             print('Net', self.num, 'copying net', net_to_copy.num)
             for i in range(len(self.copyable_vars)):
-                self.sess.run(self.copyable_vars[i].assign(net_to_copy.copyable_vars[i]))
+                self.run(self.copyable_vars[i].assign(net_to_copy.copyable_vars[i]))
             # Possibly perturb learning rate and/or keep probability
-            new_learning_rate = net_to_copy.sess.run(net_to_copy.learning_rate)
+            new_learning_rate = net_to_copy.run(net_to_copy.learning_rate)
             new_keep_prob = net_to_copy.keep_prob
             rand = random.randrange(3)
             if rand <= 1:
                 new_learning_rate = random_perturbation(new_learning_rate, 1.2, 0.00001, 0.001)
             if rand >= 1:
                 new_keep_prob = random_perturbation(new_keep_prob, 1.2, 0.1, 1)
-            self.sess.run(self.learning_rate.assign(new_learning_rate))
+            self.run(self.learning_rate.assign(new_learning_rate))
             self.keep_prob = new_keep_prob
             self.step_num = net_to_copy.step_num
             self.update_accuracy = True
