@@ -3,13 +3,12 @@ A convolutional neural network for MNIST that is compatible with
 population-based training.
 """
 
-from typing import List
+from typing import Any, List
 import math
 import random
 import tensorflow as tf
 from pbt import Device, PBTAbleGraph
 from mnist_convnet import MNISTConvNet
-from tensorflow.examples.tutorials.mnist import input_data
 
 
 def random_perturbation(value: float, factor: float, min_val: float = None, max_val: float = None) -> float:
@@ -50,7 +49,6 @@ class NetUpdate:
         self.keep_prob = net.keep_prob
 
 
-mnist = input_data.read_data_sets('MNIST_data/', one_hot=True)
 num_nets = 0
 
 
@@ -58,30 +56,38 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
     """
     A PBTAbleGraph version of an MNIST convnet that trains itself to minimize
     cross entropy with a variable learning rate and dropout keep probability.
+
+    A PBTAbleMNISTConvNet draws its training and testing data from a TensorFlow
+    MNIST dataset specified in its initializer. The dataset's labels must be in
+    one-hot vector format.
     """
 
     num: int
+    vars: List[tf.Variable]
+    copyable_vars: List[tf.Variable]
+    dataset: Any
     net: MNISTConvNet
     learning_rate: tf.Variable
     keep_prob: float
     train_op: tf.Operation
-    copyable_vars: List[tf.Variable]
     step_num: int
     accuracy: float
     update_accuracy: bool
     last_update: NetUpdate
 
-    def __init__(self, device: Device, sess: tf.Session, learning_rate: float, keep_prob: float) -> None:
+    def __init__(self, device: Device, sess: tf.Session,
+                 dataset, learning_rate: float, keep_prob: float) -> None:
         """
         Creates a new PBTAbleMNISTConvNet with device <device>, Session <sess>,
-        initial learning rate <learning_rate>, and dropout keep probability
-        <keep_prob>.
+        dataset <dataset>, initial learning rate <learning_rate>, and dropout
+        keep probability <keep_prob>.
         """
         global num_nets
         super().__init__(device, sess)
         with tf.device(self.device):
             self.num = num_nets
             num_nets += 1
+            self.dataset = dataset
             self.net = MNISTConvNet()
             net_vars = [self.net.w_conv1, self.net.b_conv1, self.net.w_conv2, self.net.b_conv2,
                         self.net.w_fc1, self.net.b_fc1, self.net.w_fc2, self.net.b_fc2]
@@ -95,14 +101,15 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
             self.copyable_vars.extend(optimizer.get_slot(var, name)
                                       for name in optimizer.get_slot_names() for var in net_vars)
             self.copyable_vars.extend(optimizer._get_beta_accumulators())
+            self.vars = [self.learning_rate]
+            self.vars.extend(self.copyable_vars)
             self.step_num = 0
             self.accuracy = 0
             self.update_accuracy = True
             self.last_update = None
 
     def initialize_variables(self, sess: tf.Session) -> None:
-        sess.run([var.initializer for var in self.copyable_vars])
-        sess.run(self.learning_rate.initializer)
+        sess.run([var.initializer for var in self.vars])
         self._record_update()
 
     def _record_update(self):
@@ -131,8 +138,8 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         data set.
         """
         if self.update_accuracy:
-            self.accuracy = self.run(self.net.accuracy, feed_dict={self.net.x: mnist.test.images,
-                                                                   self.net.y_: mnist.test.labels,
+            self.accuracy = self.run(self.net.accuracy, feed_dict={self.net.x: self.dataset.test.images,
+                                                                   self.net.y_: self.dataset.test.labels,
                                                                    self.net.keep_prob: 1})
             self.update_accuracy = False
         return self.accuracy
@@ -143,7 +150,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
     def train_step(self) -> None:
         if self.step_num % 100 == 0:
             print('Net', self.num, 'step', self.step_num)
-        batch = mnist.train.next_batch(50)
+        batch = self.dataset.train.next_batch(50)
         self.run(self.train_op, feed_dict={self.net.x: batch[0],
                                            self.net.y_: batch[1],
                                            self.net.keep_prob: self.keep_prob})
@@ -182,10 +189,11 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
             print('Net', self.num, 'finished copying')
 
 
-def random_mnist_convnet(device: Device, sess: tf.Session) -> PBTAbleMNISTConvNet:
+def random_mnist_convnet(device: Device, sess: tf.Session, dataset) -> PBTAbleMNISTConvNet:
     """
-    Returns a new PBTAbleMNISTConvNet with device <device>, Session <sess>, and
-    randomized initial variable values.
+    Returns a new PBTAbleMNISTConvNet with device <device>, Session <sess>,
+    dataset <dataset>, and randomized initial variable values.
     """
-    return PBTAbleMNISTConvNet(device, sess, 10 ** min(max(random.gauss(-4, 0.5), -5), -3),
+    return PBTAbleMNISTConvNet(device, sess, dataset,
+                               10 ** min(max(random.gauss(-4, 0.5), -5), -3),
                                min(max(random.gauss(0.5, 0.2), 0.1), 1))
