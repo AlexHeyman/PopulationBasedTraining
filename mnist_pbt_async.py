@@ -15,6 +15,8 @@ addresses = ['localhost:' + str(2220 + i) for i in range(pop_size)]
 cluster = AsyncPBTCluster[PBTAbleMNISTConvNet](addresses, lambda device, sess:
                                                random_mnist_convnet(device, sess, mnist))
 cluster.initialize_variables()
+for net in cluster.get_population():
+    net.get_accuracy()
 training_start = datetime.datetime.now()
 cluster.train(lambda net, population: net.step_num < 10000)
 print('Training time:', datetime.datetime.now() - training_start)

@@ -77,16 +77,10 @@ class PBTAbleGraph(Generic[T]):
         """
         raise NotImplementedError
 
-    def train_step(self) -> None:
+    def train(self) -> None:
         """
-        Executes one step of this PBTAbleGraph's training.
-        """
-        raise NotImplementedError
-
-    def is_ready(self) -> bool:
-        """
-        Returns whether this PBTAbleGraph is ready to use the rest of its
-        population to decide whether to exploit and/or explore.
+        Trains this PBTAbleGraph until it is ready to consider exploitation of
+        its population.
         """
         raise NotImplementedError
 
@@ -95,6 +89,15 @@ class PBTAbleGraph(Generic[T]):
         Exploits <population> to improve this PBTAbleGraph and/or modifies this
         PBTAbleGraph to explore a different option, if those actions are judged
         to be currently necessary.
+        """
+        raise NotImplementedError
+
+    @staticmethod
+    def population_exploit_explore(population: List[T]) -> None:
+        """
+        Causes all of the PBTAbleGraphs in <population> to exploit and/or
+        explore each other simultaneously, like a combined version of all of
+        the graphs' exploit_and_or_explore() methods.
         """
         raise NotImplementedError
 
@@ -155,9 +158,10 @@ def async_pbt_thread(graph: T, population: List[T],
     continue.
     """
     while training_cond(graph, population):
-        graph.train_step()
-        if graph.is_ready():
-            graph.exploit_and_or_explore(population)
+        graph.train()
+        if not training_cond(graph, population):
+            break
+        graph.exploit_and_or_explore(population)
 
 
 class AsyncPBTCluster(Generic[T], PBTCluster[T]):
@@ -222,7 +226,8 @@ class AsyncPBTCluster(Generic[T], PBTCluster[T]):
 
 class LocalPBTCluster(Generic[T], PBTCluster[T]):
     """
-    A PBTCluster that simulates parallel training with a single local thread.
+    A PBTCluster that simulates synchronous training with a single local
+    thread.
     """
 
     sess: tf.Session
@@ -262,18 +267,18 @@ class LocalPBTCluster(Generic[T], PBTCluster[T]):
         return highest_graph
 
     def train(self, training_cond: Callable[[T, List[T]], bool]) -> None:
-        unfinished_graphs = list(self.population)
-        i = -1
-        while len(unfinished_graphs) > 0:
-            i = (i + 1) % len(unfinished_graphs)
-            graph = unfinished_graphs[i]
-            if training_cond(graph, self.population):
-                # Small chance to skip each training step to simulate the
-                # "devices" not necessarily being perfectly synchronized
-                if random.random() < 0.9:
-                    graph.train_step()
-                    if graph.is_ready():
-                        graph.exploit_and_or_explore(self.population)
+        while True:
+            keep_training = False
+            for graph in self.population:
+                if training_cond(graph, self.population):
+                    keep_training = True
+                    graph.train()
+            if keep_training:
+                for graph in self.population:
+                    if training_cond(graph, self.population):
+                        graph.population_exploit_explore(self.population)
+                        break
+                else:
+                    break
             else:
-                unfinished_graphs.pop(i)
-                i -= 1
+                break
