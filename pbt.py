@@ -4,8 +4,7 @@ TensorFlow.
 """
 
 from typing import Union, List, Callable, TypeVar, Generic
-import random
-from threading import Thread, Lock
+from threading import Thread
 import tensorflow as tf
 
 T = TypeVar('T', bound='PBTAbleGraph')
@@ -27,7 +26,6 @@ class PBTAbleGraph(Generic[T]):
 
     device: Device
     sess: tf.Session
-    sess_lock: Lock
 
     def __init__(self, device: Device, sess: tf.Session) -> None:
         """
@@ -36,7 +34,6 @@ class PBTAbleGraph(Generic[T]):
         """
         self.device = device
         self.sess = sess
-        self.sess_lock = Lock()
 
     def initialize_variables(self, sess: tf.Session) -> None:
         """
@@ -44,30 +41,6 @@ class PBTAbleGraph(Generic[T]):
         TensorFlow Variables that this PBTAbleGraph created in its initializer.
         """
         raise NotImplementedError
-
-    def run(self, fetches, feed_dict=None, options=None, run_metadata=None):
-        """
-        Calls this PBTAbleGraph's Session's run() method with the specified
-        parameters and returns its return value, blocking beforehand until any
-        other invocations of this method in other threads have finished.
-
-        This method should always be called instead of calling the Session's
-        run() method directly to prevent multiple threads from interfering with
-        each other's invocations of the Session's run() method.
-        """
-        self.sess_lock.acquire()
-        value = self.sess.run(fetches, feed_dict, options, run_metadata)
-        self.sess_lock.release()
-        return value
-
-    def assign(self, var: tf.Variable, graph: T, graph_var: tf.Variable) -> None:
-        """
-        Assigns the value of <graph_var>, a Variable of <graph>, to <var>, a
-        Variable of this PBTAbleGraph.
-        """
-        with tf.device(self.device):
-            value = graph.run(graph_var)
-            self.run(var.assign(value))
 
     def get_metric(self) -> float:
         """

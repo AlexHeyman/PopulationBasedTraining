@@ -4,6 +4,7 @@ population-based training.
 """
 
 from typing import Any, List
+from threading import RLock
 import math
 import random
 import tensorflow as tf
@@ -43,10 +44,12 @@ class NetUpdate:
         """
         Creates a new NetUpdate that stores <net>'s current information.
         """
+        net.lock.acquire()
         self.prev = net.last_update
         self.step_num = net.step_num
-        self.learning_rate = net.run(net.learning_rate)
+        self.learning_rate = net.sess.run(net.learning_rate)
         self.keep_prob = net.keep_prob
+        net.lock.release()
 
 
 num_nets = 0
@@ -63,6 +66,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
     """
 
     num: int
+    lock: RLock
     vars: List[tf.Variable]
     copyable_vars: List[tf.Variable]
     dataset: Any
@@ -87,6 +91,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         with tf.device(self.device):
             self.num = num_nets
             num_nets += 1
+            self.lock = RLock()
             self.dataset = dataset
             self.net = MNISTConvNet()
             net_vars = [self.net.w_conv1, self.net.b_conv1, self.net.w_conv2, self.net.b_conv2,
@@ -109,8 +114,10 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
             self.last_update = None
 
     def initialize_variables(self, sess: tf.Session) -> None:
+        self.lock.acquire()
         sess.run([var.initializer for var in self.vars])
         self._record_update()
+        self.lock.release()
 
     def _record_update(self):
         self.last_update = NetUpdate(self)
@@ -120,6 +127,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         Prints this PBTAbleMNISTConvNet's hyperparameter update history to the
         console.
         """
+        self.lock.acquire()
         print('Net', self.num, 'hyperparameter update history:')
         updates = []
         update = self.last_update
@@ -131,30 +139,36 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
             print('Step', update.step_num)
             print('Learning rate:', update.learning_rate)
             print('Keep probability:', update.keep_prob)
+        self.lock.release()
 
     def get_accuracy(self) -> float:
         """
         Returns this PBTAbleMNISTConvNet's accuracy score on the MNIST test
         data set.
         """
+        self.lock.acquire()
         if self.update_accuracy:
-            self.accuracy = self.run(self.net.accuracy, feed_dict={self.net.x: self.dataset.test.images,
-                                                                   self.net.y_: self.dataset.test.labels,
-                                                                   self.net.keep_prob: 1})
+            self.accuracy = self.sess.run(self.net.accuracy,
+                                          feed_dict={self.net.x: self.dataset.test.images,
+                                                     self.net.y_: self.dataset.test.labels,
+                                                     self.net.keep_prob: 1})
             self.update_accuracy = False
             print('Net', self.num, 'step', self.step_num, 'accuracy:', self.accuracy)
+        self.lock.release()
         return self.accuracy
 
     def get_metric(self) -> float:
         return self.get_accuracy()
 
     def _train_step(self) -> None:
+        self.lock.acquire()
         batch = self.dataset.train.next_batch(50)
-        self.run(self.train_op, feed_dict={self.net.x: batch[0],
-                                           self.net.y_: batch[1],
-                                           self.net.keep_prob: self.keep_prob})
+        self.sess.run(self.train_op, feed_dict={self.net.x: batch[0],
+                                                self.net.y_: batch[1],
+                                                self.net.keep_prob: self.keep_prob})
         self.update_accuracy = True
         self.step_num += 1
+        self.lock.release()
 
     def train(self) -> None:
         print('Net', self.num, 'starting training run at step', self.step_num)
@@ -168,10 +182,14 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         Copies the specified PBTAbleMNISTConvNet, randomly changing the copied
         hyperparameters.
         """
+        self.lock.acquire()
+        net.lock.acquire()
         print('Net', self.num, 'copying net', net.num)
         for i in range(len(self.copyable_vars)):
-            self.assign(self.copyable_vars[i], net, net.copyable_vars[i])
-        new_learning_rate = net.run(net.learning_rate)
+            net_var_value = net.sess.run(net.copyable_vars[i])
+            with tf.device(self.device):
+                self.sess.run(self.copyable_vars[i].assign(net_var_value))
+        new_learning_rate = net.sess.run(net.learning_rate)
         new_keep_prob = net.keep_prob
         rand = random.randrange(3)
         if rand <= 1:
@@ -179,35 +197,60 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         if rand >= 1:
             new_keep_prob = random_perturbation(new_keep_prob, 1.2, 0.1, 1)
         with tf.device(self.device):
-            self.run(self.learning_rate.assign(new_learning_rate))
+            self.sess.run(self.learning_rate.assign(new_learning_rate))
         self.keep_prob = new_keep_prob
         self.step_num = net.step_num
         self.update_accuracy = True
         self.last_update = net.last_update
-        self._record_update()
         print('Net', self.num, 'finished copying')
+        net.lock.release()
+        self._record_update()
+        self.lock.release()
 
     def exploit_and_or_explore(self, population: List['PBTAbleMNISTConvNet']) -> None:
-        print('Net', self.num, 'ranking nets')
         # Rank population by accuracy
-        ranked_pop = sorted(population, key=lambda net: net.get_accuracy())
+        print('Net', self.num, 'ranking nets')
+        accuracies = {}
+        shuffled_pop = random.sample(population, len(population))
+        for net in shuffled_pop:
+            net.lock.acquire()
+            accuracies[net] = net.get_accuracy()
+        ranked_pop = sorted(population, key=lambda net: accuracies[net])
         print('Net', self.num, 'finished ranking')
         if ranked_pop.index(self) < math.ceil(0.2 * len(ranked_pop)):  # In the bottom 20%?
             # Copy a net from the top 20%
-            self.copy_and_explore(
-                ranked_pop[random.randrange(math.floor(0.8 * len(ranked_pop)), len(ranked_pop))])
+            net_to_copy = ranked_pop[random.randrange(math.floor(0.8 * len(ranked_pop)), len(ranked_pop))]
+            for net in shuffled_pop:
+                if net is not self and net is not net_to_copy:
+                    net.lock.release()
+            self.copy_and_explore(net_to_copy)
+            self.lock.release()
+            net_to_copy.lock.release()
+        else:
+            for net in shuffled_pop:
+                net.lock.release()
 
     @staticmethod
     def population_exploit_explore(population: List['PBTAbleMNISTConvNet']) -> None:
-        print('Ranking nets')
         # Rank population by accuracy
-        ranked_pop = sorted(population, key=lambda net: net.get_accuracy())
+        print('Ranking nets')
+        accuracies = {}
+        for net in random.sample(population, len(population)):
+            net.lock.acquire()
+            accuracies[net] = net.get_accuracy()
+        ranked_pop = sorted(population, key=lambda net: accuracies[net])
         print('Finished ranking')
         # Bottom 20% copies top 20%
-        worst_nets = ranked_pop[:math.ceil(0.2 * len(ranked_pop))]
-        best_nets = ranked_pop[math.floor(0.8 * len(ranked_pop)):]
+        percentile20 = math.ceil(0.2 * len(ranked_pop))
+        percentile80 = math.floor(0.8 * len(ranked_pop))
+        for net in ranked_pop[percentile20:percentile80]:
+            net.lock.release()
+        worst_nets = ranked_pop[:percentile20]
+        best_nets = ranked_pop[percentile80:]
         for i in range(len(worst_nets)):
             worst_nets[i].copy_and_explore(best_nets[i])
+            worst_nets[i].lock.release()
+            best_nets[i].lock.release()
 
 
 def random_mnist_convnet(device: Device, sess: tf.Session, dataset) -> PBTAbleMNISTConvNet:
