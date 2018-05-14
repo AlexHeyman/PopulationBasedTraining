@@ -5,6 +5,7 @@ TensorFlow.
 
 from typing import Union, List, Callable, TypeVar, Generic
 from threading import Thread
+from multiprocessing import Process, Queue
 import tensorflow as tf
 
 T = TypeVar('T', bound='PBTAbleGraph')
@@ -35,10 +36,10 @@ class PBTAbleGraph(Generic[T]):
         self.device = device
         self.sess = sess
 
-    def initialize_variables(self, sess: tf.Session) -> None:
+    def initialize_variables(self) -> None:
         """
-        Instructs <sess> to run the initializer Operations of all of the
-        TensorFlow Variables that this PBTAbleGraph created in its initializer.
+        Runs the initializer Operations of all of the TensorFlow Variables that
+        this PBTAbleGraph created in its initializer.
         """
         raise NotImplementedError
 
@@ -120,83 +121,6 @@ class PBTCluster(Generic[T]):
         raise NotImplementedError
 
 
-def async_pbt_thread(graph: T, population: List[T],
-                     training_cond: Callable[[T, List[T]], bool]) -> None:
-    """
-    A single thread of an AsyncPBTCluster's population-based training.
-    <graph> is the PBTAbleGraph to be trained. <population> is the population
-    of PBTAbleGraphs to which <graph> belongs. T is the type of PBTAbleGraph of
-    which <population> consists. <training_cond> is a Callable that, when
-    passed <graph> and <population>, returns whether the training should
-    continue.
-    """
-    while training_cond(graph, population):
-        graph.train()
-        if not training_cond(graph, population):
-            break
-        graph.exploit_and_or_explore(population)
-
-
-class AsyncPBTCluster(Generic[T], PBTCluster[T]):
-    """
-    A PBTCluster that uses distributed TensorFlow to train its PBTAbleGraphs
-    on different devices asynchronously.
-    """
-
-    cluster: tf.train.ClusterSpec
-    population: List[T]
-
-    def __init__(self, addresses: List[str], graph_maker: Callable[[Device, tf.Session], T]) -> None:
-        """
-        Creates a new AsyncPBTCluster with graphs returned by <graph_maker> as
-        its population.
-
-        <addresses> is the list of network addresses of the devices on which
-        this AsyncPBTCluster will host its tasks, with each task training one
-        PBTAbleGraph. <graph_maker> is a Callable that returns a new T with the
-        specified device and Session each time it is called.
-        """
-        self.cluster = tf.train.ClusterSpec({"worker": addresses})
-        self.population = []
-        for task_index in range(len(addresses)):
-            device = '/job:worker/task:' + str(task_index)
-            server = tf.train.Server(self.cluster, job_name="worker", task_index=task_index)
-            sess = tf.Session(server.target)
-            self.population.append(graph_maker(device, sess))
-
-    def get_population(self) -> List[T]:
-        return self.population
-
-    def initialize_variables(self):
-        chief_sess = self.population[0].sess
-        for graph in self.population:
-            graph.initialize_variables(chief_sess)
-
-    def get_highest_metric_graph(self) -> T:
-        highest_graph = None
-        highest_metric = None
-        for graph in self.population:
-            if highest_graph is None:
-                highest_graph = graph
-                highest_metric = graph.get_metric()
-            else:
-                metric = graph.get_metric()
-                if metric > highest_metric:
-                    highest_graph = graph
-                    highest_metric = metric
-        return highest_graph
-
-    def train(self, training_cond: Callable[[T, List[T]], bool]) -> None:
-        threads = []
-        for graph in self.population:
-            threads.append(Thread(target=async_pbt_thread, name='PBT thread for ' + graph.device,
-                                  args=(graph, self.population, training_cond), daemon=True))
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-
-
 class LocalPBTCluster(Generic[T], PBTCluster[T]):
     """
     A PBTCluster that simulates synchronous training with a single local
@@ -223,7 +147,7 @@ class LocalPBTCluster(Generic[T], PBTCluster[T]):
 
     def initialize_variables(self):
         for graph in self.population:
-            graph.initialize_variables(self.sess)
+            graph.initialize_variables()
 
     def get_highest_metric_graph(self) -> T:
         highest_graph = None
@@ -255,3 +179,86 @@ class LocalPBTCluster(Generic[T], PBTCluster[T]):
                     break
             else:
                 break
+
+
+def _pbt_localhost_process(queue: Queue, addresses: List[str], task_index: int) -> None:
+    cluster = tf.train.ClusterSpec({'worker': addresses})
+    server = tf.train.Server(cluster, job_name='worker', task_index=task_index)
+    queue.put(server.target)
+    server.join()
+
+
+def _async_pbt_thread(graph: T, population: List[T],
+                      training_cond: Callable[[T, List[T]], bool]) -> None:
+    while training_cond(graph, population):
+        graph.train()
+        if not training_cond(graph, population):
+            break
+        graph.exploit_and_or_explore(population)
+
+
+class AsyncPBTCluster(Generic[T], PBTCluster[T]):
+    """
+    A PBTCluster that uses distributed TensorFlow to train its PBTAbleGraphs
+    on different devices asynchronously.
+    """
+
+    cluster: tf.train.ClusterSpec
+    population: List[T]
+
+    def __init__(self, addresses: List[str], graph_maker: Callable[[Device, tf.Session], T]) -> None:
+        """
+        Creates a new AsyncPBTCluster with graphs returned by <graph_maker> as
+        its population.
+
+        <addresses> is the list of network addresses of the devices on which
+        this AsyncPBTCluster will host its tasks, with each task training one
+        PBTAbleGraph. <graph_maker> is a Callable that returns a new T with the
+        specified device and Session each time it is called.
+        """
+        self.cluster = tf.train.ClusterSpec({'worker': addresses})
+        self.population = []
+        for task_index in range(len(addresses)):
+            device = '/job:worker/task:' + str(task_index)
+            if addresses[task_index].startswith('localhost'):
+                queue = Queue()
+                process = Process(target=_pbt_localhost_process, args=(queue, addresses, task_index))
+                process.daemon = True
+                process.start()
+                target = queue.get()
+            else:
+                server = tf.train.Server(self.cluster, job_name='worker', task_index=task_index)
+                target = server.target
+            sess = tf.Session(target)
+            self.population.append(graph_maker(device, sess))
+
+    def get_population(self) -> List[T]:
+        return self.population
+
+    def initialize_variables(self):
+        for graph in self.population:
+            graph.initialize_variables()
+
+    def get_highest_metric_graph(self) -> T:
+        highest_graph = None
+        highest_metric = None
+        for graph in self.population:
+            if highest_graph is None:
+                highest_graph = graph
+                highest_metric = graph.get_metric()
+            else:
+                metric = graph.get_metric()
+                if metric > highest_metric:
+                    highest_graph = graph
+                    highest_metric = metric
+        return highest_graph
+
+    def train(self, training_cond: Callable[[T, List[T]], bool]) -> None:
+        threads = []
+        for graph in self.population:
+            threads.append(Thread(target=_async_pbt_thread, name='PBT thread for ' + graph.device,
+                                  args=(graph, self.population, training_cond), daemon=True))
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()

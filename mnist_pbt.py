@@ -113,9 +113,9 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
             self.update_accuracy = True
             self.last_update = None
 
-    def initialize_variables(self, sess: tf.Session) -> None:
+    def initialize_variables(self) -> None:
         self.lock.acquire()
-        sess.run([var.initializer for var in self.vars])
+        self.sess.run([var.initializer for var in self.vars])
         self._record_update()
         self.lock.release()
 
@@ -217,15 +217,16 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
             accuracies[net] = net.get_accuracy()
         ranked_pop = sorted(population, key=lambda net: accuracies[net])
         print('Net', self.num, 'finished ranking')
-        if ranked_pop.index(self) < math.ceil(0.2 * len(ranked_pop)):  # In the bottom 20%?
+        if (len(ranked_pop) > 1
+                and ranked_pop.index(self) < math.ceil(0.2 * len(ranked_pop))):  # In the bottom 20%?
             # Copy a net from the top 20%
             net_to_copy = ranked_pop[random.randrange(math.floor(0.8 * len(ranked_pop)), len(ranked_pop))]
             for net in shuffled_pop:
                 if net is not self and net is not net_to_copy:
                     net.lock.release()
             self.copy_and_explore(net_to_copy)
-            self.lock.release()
             net_to_copy.lock.release()
+            self.lock.release()
         else:
             for net in shuffled_pop:
                 net.lock.release()
@@ -235,22 +236,27 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         # Rank population by accuracy
         print('Ranking nets')
         accuracies = {}
-        for net in random.sample(population, len(population)):
+        shuffled_pop = random.sample(population, len(population))
+        for net in shuffled_pop:
             net.lock.acquire()
             accuracies[net] = net.get_accuracy()
         ranked_pop = sorted(population, key=lambda net: accuracies[net])
         print('Finished ranking')
-        # Bottom 20% copies top 20%
-        percentile20 = math.ceil(0.2 * len(ranked_pop))
-        percentile80 = math.floor(0.8 * len(ranked_pop))
-        for net in ranked_pop[percentile20:percentile80]:
-            net.lock.release()
-        worst_nets = ranked_pop[:percentile20]
-        best_nets = ranked_pop[percentile80:]
-        for i in range(len(worst_nets)):
-            worst_nets[i].copy_and_explore(best_nets[i])
-            worst_nets[i].lock.release()
-            best_nets[i].lock.release()
+        if len(ranked_pop) > 1:
+            # Bottom 20% copies top 20%
+            percentile20 = math.ceil(0.2 * len(ranked_pop))
+            percentile80 = math.floor(0.8 * len(ranked_pop))
+            for net in ranked_pop[percentile20:percentile80]:
+                net.lock.release()
+            worst_nets = ranked_pop[:percentile20]
+            best_nets = ranked_pop[percentile80:]
+            for i in range(len(worst_nets)):
+                worst_nets[i].copy_and_explore(best_nets[i])
+                worst_nets[i].lock.release()
+                best_nets[i].lock.release()
+        else:
+            for net in shuffled_pop:
+                net.lock.release()
 
 
 def random_mnist_convnet(device: Device, sess: tf.Session, dataset) -> PBTAbleMNISTConvNet:

@@ -8,38 +8,39 @@ import tensorflow as tf
 from mnist_convnet import MNISTConvNet
 from tensorflow.examples.tutorials.mnist import input_data
 
-mnist = input_data.read_data_sets('MNIST_data/', one_hot=True)
+if __name__ == '__main__':
+    mnist = input_data.read_data_sets('MNIST_data/', one_hot=True)
 
-net = MNISTConvNet()
-cross_entropy = tf.reduce_mean(
-    tf.nn.softmax_cross_entropy_with_logits(labels=net.y_, logits=net.y))
-train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
+    net = MNISTConvNet()
+    cross_entropy = tf.reduce_mean(
+        tf.nn.softmax_cross_entropy_with_logits(labels=net.y_, logits=net.y))
+    train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
 
-sess = tf.Session()
-sess.run(tf.global_variables_initializer())
-training_start = None
-training_time = datetime.timedelta()
+    sess = tf.Session()
+    sess.run(tf.global_variables_initializer())
+    training_start = None
+    training_time = datetime.timedelta()
 
-step_num = 0
-while step_num < 10000:
-    if step_num % 100 == 0:
-        print('Step', step_num)
-        if step_num % 500 == 0:
-            if training_start is not None:
-                training_time += datetime.datetime.now() - training_start
-            print('Training time:', str(training_time))
-            print('Accuracy: %a' % sess.run(net.accuracy, feed_dict={net.x: mnist.test.images,
-                                                                     net.y_: mnist.test.labels,
-                                                                     net.keep_prob: 1}))
-            training_start = datetime.datetime.now()
-    batch = mnist.train.next_batch(50)
-    sess.run(train_step, feed_dict={net.x: batch[0], net.y_: batch[1], net.keep_prob: 0.5})
-    step_num += 1
+    step_num = 0
+    while step_num < 10000:
+        if step_num % 100 == 0:
+            print('Step', step_num)
+            if step_num % 500 == 0:
+                if training_start is not None:
+                    training_time += datetime.datetime.now() - training_start
+                print('Training time:', str(training_time))
+                print('Accuracy: %a' % sess.run(net.accuracy, feed_dict={net.x: mnist.test.images,
+                                                                         net.y_: mnist.test.labels,
+                                                                         net.keep_prob: 1}))
+                training_start = datetime.datetime.now()
+        batch = mnist.train.next_batch(50)
+        sess.run(train_step, feed_dict={net.x: batch[0], net.y_: batch[1], net.keep_prob: 0.5})
+        step_num += 1
 
-print('Step', step_num)
-if training_start is not None:
-    training_time += datetime.datetime.now() - training_start
-print('Training time:', training_time)
-print('Accuracy: %a' % sess.run(net.accuracy, feed_dict={net.x: mnist.test.images,
-                                                         net.y_: mnist.test.labels,
-                                                         net.keep_prob: 1.0}))
+    print('Step', step_num)
+    if training_start is not None:
+        training_time += datetime.datetime.now() - training_start
+    print('Training time:', training_time)
+    print('Accuracy: %a' % sess.run(net.accuracy, feed_dict={net.x: mnist.test.images,
+                                                             net.y_: mnist.test.labels,
+                                                             net.keep_prob: 1}))
