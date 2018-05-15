@@ -48,7 +48,7 @@ class NetUpdate:
         self.prev = net.last_update
         self.step_num = net.step_num
         self.learning_rate = net.sess.run(net.learning_rate)
-        self.keep_prob = net.keep_prob
+        self.keep_prob = net.sess.run(net.keep_prob)
         net.lock.release()
 
 
@@ -72,7 +72,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
     dataset: Any
     net: MNISTConvNet
     learning_rate: tf.Variable
-    keep_prob: float
+    keep_prob: tf.Variable
     train_op: tf.Operation
     step_num: int
     accuracy: float
@@ -93,20 +93,22 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
             num_nets += 1
             self.lock = RLock()
             self.dataset = dataset
-            self.net = MNISTConvNet()
+            self.x = tf.placeholder(tf.float32, [None, 784])
+            self.y_ = tf.placeholder(tf.float32, [None, 10])
+            self.keep_prob = tf.Variable(keep_prob, trainable=False)
+            self.net = MNISTConvNet(self.x, self.y_, self.keep_prob)
             net_vars = [self.net.w_conv1, self.net.b_conv1, self.net.w_conv2, self.net.b_conv2,
                         self.net.w_fc1, self.net.b_fc1, self.net.w_fc2, self.net.b_fc2]
             self.learning_rate = tf.Variable(learning_rate, trainable=False)
-            self.keep_prob = keep_prob
             cross_entropy = tf.reduce_mean(
-                tf.nn.softmax_cross_entropy_with_logits(labels=self.net.y_, logits=self.net.y))
+                tf.nn.softmax_cross_entropy_with_logits(labels=self.y_, logits=self.net.y))
             optimizer = tf.train.AdamOptimizer(self.learning_rate)
             self.train_op = optimizer.minimize(cross_entropy)
             self.copyable_vars = list(net_vars)
             self.copyable_vars.extend(optimizer.get_slot(var, name)
                                       for name in optimizer.get_slot_names() for var in net_vars)
             self.copyable_vars.extend(optimizer._get_beta_accumulators())
-            self.vars = [self.learning_rate]
+            self.vars = [self.learning_rate, self.keep_prob]
             self.vars.extend(self.copyable_vars)
             self.step_num = 0
             self.accuracy = 0
@@ -149,9 +151,9 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         self.lock.acquire()
         if self.update_accuracy:
             self.accuracy = self.sess.run(self.net.accuracy,
-                                          feed_dict={self.net.x: self.dataset.test.images,
-                                                     self.net.y_: self.dataset.test.labels,
-                                                     self.net.keep_prob: 1})
+                                          feed_dict={self.x: self.dataset.test.images,
+                                                     self.y_: self.dataset.test.labels,
+                                                     self.keep_prob: 1})
             self.update_accuracy = False
             print('Net', self.num, 'step', self.step_num, 'accuracy:', self.accuracy)
         self.lock.release()
@@ -163,9 +165,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
     def _train_step(self) -> None:
         self.lock.acquire()
         batch = self.dataset.train.next_batch(50)
-        self.sess.run(self.train_op, feed_dict={self.net.x: batch[0],
-                                                self.net.y_: batch[1],
-                                                self.net.keep_prob: self.keep_prob})
+        self.sess.run(self.train_op, feed_dict={self.x: batch[0], self.y_: batch[1]})
         self.update_accuracy = True
         self.step_num += 1
         self.lock.release()
@@ -190,7 +190,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
             with tf.device(self.device):
                 self.sess.run(self.copyable_vars[i].assign(net_var_value))
         new_learning_rate = net.sess.run(net.learning_rate)
-        new_keep_prob = net.keep_prob
+        new_keep_prob = net.sess.run(net.keep_prob)
         rand = random.randrange(3)
         if rand <= 1:
             new_learning_rate = random_perturbation(new_learning_rate, 1.2, 0.00001, 0.001)
@@ -198,7 +198,8 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
             new_keep_prob = random_perturbation(new_keep_prob, 1.2, 0.1, 1)
         with tf.device(self.device):
             self.sess.run(self.learning_rate.assign(new_learning_rate))
-        self.keep_prob = new_keep_prob
+        with tf.device(self.device):
+            self.sess.run(self.keep_prob.assign(new_keep_prob))
         self.step_num = net.step_num
         self.update_accuracy = True
         self.last_update = net.last_update

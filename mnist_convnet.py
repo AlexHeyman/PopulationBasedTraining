@@ -41,9 +41,6 @@ class MNISTConvNet:
     two fully connected layers.
     """
 
-    x: tf.Tensor
-    y_: tf.Tensor
-    keep_prob: tf.Tensor
     w_conv1: tf.Variable
     b_conv1: tf.Variable
     w_conv2: tf.Variable
@@ -55,18 +52,20 @@ class MNISTConvNet:
     y: tf.Tensor
     accuracy: tf.Tensor
 
-    def __init__(self):
+    def __init__(self, x, y_, keep_prob):
         """
         Creates a new MNISTConvNet.
+
+        <x> is the input batch's images, a tf.float32 Tensor with shape [None,
+        784]. <y_> is the batch's labels in one-hot vector form, a tf.float32
+        Tensor with shape [None, 10]. keep_prob is the dropout keep
+        probability, a tf.float32 Tensor with shape [].
         """
-        self.x = tf.placeholder(tf.float32, [None, 784])
-        self.y_ = tf.placeholder(tf.float32, [None, 10])
-        self.keep_prob = tf.placeholder(tf.float32)
 
         self.w_conv1 = weight_variable([5, 5, 1, 32])
         self.b_conv1 = bias_variable([32])
 
-        x_image = tf.reshape(self.x, [-1, 28, 28, 1])
+        x_image = tf.reshape(x, [-1, 28, 28, 1])
         h_conv1 = tf.nn.relu(conv2d(x_image, self.w_conv1) + self.b_conv1)
         h_pool1 = max_pool_2x2(h_conv1)
 
@@ -81,7 +80,7 @@ class MNISTConvNet:
 
         h_pool2_flat = tf.reshape(h_pool2, [-1, 7 * 7 * 64])
         h_fc1 = tf.nn.relu(tf.matmul(h_pool2_flat, self.w_fc1) + self.b_fc1)
-        h_fc1_drop = tf.nn.dropout(h_fc1, self.keep_prob)
+        h_fc1_drop = tf.nn.dropout(h_fc1, keep_prob)
 
         self.w_fc2 = weight_variable([1024, 10])
         self.b_fc2 = bias_variable([10])
@@ -89,5 +88,5 @@ class MNISTConvNet:
         self.y = tf.matmul(h_fc1_drop, self.w_fc2) + self.b_fc2
 
         correct_prediction = tf.equal(
-            tf.argmax(self.y, 1), tf.argmax(self.y_, 1))
+            tf.argmax(self.y, 1), tf.argmax(y_, 1))
         self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
