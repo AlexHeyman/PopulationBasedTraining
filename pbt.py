@@ -3,8 +3,8 @@ An implementation of population-based training of neural networks for
 TensorFlow.
 """
 
-from typing import Union, List, Callable, TypeVar, Generic
-from threading import Thread
+from typing import Union, List, Tuple, Callable, TypeVar, Generic
+from threading import Thread, RLock
 from multiprocessing import Process, Queue
 import tensorflow as tf
 
@@ -19,7 +19,9 @@ class PBTAbleGraph(Generic[T]):
     A PBTAbleGraph need not have a TensorFlow Graph object all to itself.
 
     A PBTAbleGraph has an associated device on which all of its TensorFlow
-    information must be placed, as well as an associated TensorFlow Session.
+    information must be placed, an associated TensorFlow Session, and an RLock
+    that should be used to prevent multiple threads from interacting with it at
+    once.
 
     T is the type of PBTAbleGraph that this PBTAbleGraph forms populations
     with.
@@ -27,6 +29,7 @@ class PBTAbleGraph(Generic[T]):
 
     device: Device
     sess: tf.Session
+    lock: RLock
 
     def __init__(self, device: Device, sess: tf.Session) -> None:
         """
@@ -35,6 +38,7 @@ class PBTAbleGraph(Generic[T]):
         """
         self.device = device
         self.sess = sess
+        self.lock = RLock()
 
     def initialize_variables(self) -> None:
         """
@@ -262,3 +266,146 @@ class AsyncPBTCluster(Generic[T], PBTCluster[T]):
             thread.start()
         for thread in threads:
             thread.join()
+
+
+class Hyperparameter:
+    """
+    A non-trained parameter of a HyperparamsPBTAbleGraph.
+
+    A Hyperparameter's __str__() method should return a string representing its
+    value.
+    """
+
+    name: str
+    graph: 'HyperparamsPBTAbleGraph'
+
+    def __init__(self, name: str, graph: 'HyperparamsPBTAbleGraph') -> None:
+        """
+        Creates a new Hyperparameter of <graph> with descriptive name <name>.
+        """
+        self.name = name
+        self.graph = graph
+        graph.hyperparams.append(self)
+
+    def initialize_variables(self) -> None:
+        """
+        Runs the initializer Operations of all of the TensorFlow Variables that
+        this Hyperparameter created in its initializer.
+        """
+        raise NotImplementedError
+
+    def copy(self, hyperparam: 'Hyperparameter') -> None:
+        """
+        Sets this Hyperparameter's value to that of <hyperparam>, a
+        Hyperparameter of the same type.
+        """
+        raise NotImplementedError
+
+    def perturb(self) -> None:
+        """
+        Alters this Hyperparameter to explore a different option for it.
+        """
+        raise NotImplementedError
+
+
+class StepNumHyperparameter(Hyperparameter):
+    """
+    A Hyperparameter that records the number of training steps that a
+    HyperparamsPBTAbleGraph has performed.
+    """
+
+    value: int
+
+    def __init__(self, graph: 'HyperparamsPBTAbleGraph') -> None:
+        """
+        Creates a new StepNumHyperparameter of <graph>.
+        """
+        super().__init__('Step', graph)
+        self.value = 0
+
+    def __str__(self) -> str:
+        self.graph.lock.acquire()
+        string = str(self.value)
+        self.graph.lock.release()
+        return string
+
+    def initialize_variables(self) -> None:
+        pass
+
+    def copy(self, hyperparam: Hyperparameter) -> None:
+        self.graph.lock.acquire()
+        hyperparam.graph.lock.acquire()
+        self.value = hyperparam.value
+        hyperparam.graph.lock.release()
+        self.graph.lock.release()
+
+    def perturb(self) -> None:
+        pass
+
+
+class HyperparamsUpdate:
+    """
+    Stores information about a HyperparamsPBTAbleGraph's update of its
+    hyperparameters.
+    """
+
+    prev: 'HyperparamsUpdate'
+    hyperparams: List[Tuple[str, str]]
+
+    def __init__(self, graph: 'HyperparamsPBTAbleGraph') -> None:
+        """
+        Creates a new HyperparamsUpdate that stores <graph>'s current
+        information.
+        """
+        self.prev = graph.last_update
+        self.hyperparams = [(hyperparam.name, str(hyperparam)) for hyperparam in graph.hyperparams]
+
+
+class HyperparamsPBTAbleGraph(Generic[T], PBTAbleGraph[T]):
+    """
+    A PBTAbleGraph that stores its hyperparameters as a list of
+    Hyperparameters.
+    """
+
+    hyperparams: List[Hyperparameter]
+    last_update: HyperparamsUpdate
+
+    def __init__(self, device: Device, sess: tf.Session) -> None:
+        """
+        Creates a new HyperparamsPBTAbleGraph with associated device <device>
+        and Session <session>.
+        """
+        super().__init__(device, sess)
+        self.hyperparams = []
+        self.last_update = None
+
+    def initialize_variables(self) -> None:
+        for hyperparam in self.hyperparams:
+            hyperparam.initialize_variables()
+
+    def record_update(self):
+        """
+        Records this HyperparamsPBTAbleGraph's current information as a new
+        update to its hyperparameters.
+        """
+        self.lock.acquire()
+        self.last_update = HyperparamsUpdate(self)
+        self.lock.release()
+
+    def print_update_history(self):
+        """
+        Prints this HyperparamsPBTAbleGraph's hyperparameter update history to
+        the console.
+        """
+        self.lock.acquire()
+        updates = []
+        update = self.last_update
+        while update is not None:
+            updates.append(update)
+            update = update.prev
+        while len(updates) > 0:
+            update = updates.pop()
+            for name, value in update.hyperparams:
+                print(name + ': ' + value)
+            print()
+        self.lock.release()

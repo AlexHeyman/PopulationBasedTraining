@@ -4,58 +4,89 @@ population-based training.
 """
 
 from typing import Any, List
-from threading import RLock
 import math
 import random
 import tensorflow as tf
-from pbt import Device, PBTAbleGraph
+from pbt import Device, Hyperparameter, StepNumHyperparameter, HyperparamsPBTAbleGraph
 from mnist_convnet import MNISTConvNet
 
 
-def random_perturbation(value: float, factor: float, min_val: float = None, max_val: float = None) -> float:
+class MNISTFloatHyperparameter(Hyperparameter):
     """
-    Returns <value> randomly multiplied or divided by <factor>. If <min_val> is
-    not None, the returned value will be no smaller than it. If <max_val> is
-    not None, the returned value will be no larger than it.
-    """
-    if random.random() < 0.5:
-        value *= factor
-    else:
-        value /= factor
-    if min_val is not None:
-        value = max(value, min_val)
-    if max_val is not None:
-        value = min(value, max_val)
-    return value
-
-
-class NetUpdate:
-    """
-    Stores information about a PBTAbleMNISTConvNet's update of its
-    hyperparameters.
+    A Hyperparameter with a single floating-point value used by
+    PBTAbleMNISTConvNets.
     """
 
-    prev: 'NetUpdate'
-    step_num: int
-    learning_rate: float
-    keep_prob: float
+    value: tf.Variable
+    factor: float
+    min_value: float
+    max_value: float
 
-    def __init__(self, net: 'PBTAbleMNISTConvNet') -> None:
+    def __init__(self, name: str, graph: HyperparamsPBTAbleGraph,
+                 value: float, factor: float, min_value: float, max_value: float) -> None:
         """
-        Creates a new NetUpdate that stores <net>'s current information.
+        Creates a new MNISTFloatHyperparameter of graph <graph> with
+        descriptive name <name>.
+
+        <value> is the initial value. <factor> is the factor by which the value
+        will be randomly multiplied or divided when perturbed. <min_value> is
+        the minimum possible value, or None if there should be none.
+        <max_value> is the maximum possible value, or None if there should be
+        none.
         """
-        net.lock.acquire()
-        self.prev = net.last_update
-        self.step_num = net.step_num
-        self.learning_rate = net.sess.run(net.learning_rate)
-        self.keep_prob = net.sess.run(net.keep_prob)
-        net.lock.release()
+        super().__init__(name, graph)
+        if min_value is not None:
+            value = max(value, min_value)
+        if max_value is not None:
+            value = min(value, max_value)
+        self.value = tf.Variable(value, trainable=False)
+        self.factor = factor
+        self.min_value = min_value
+        self.max_value = max_value
+
+    def __str__(self) -> str:
+        self.graph.lock.acquire()
+        string = str(self._get_value())
+        self.graph.lock.release()
+        return string
+
+    def _get_value(self) -> float:
+        return self.graph.sess.run(self.value)
+
+    def _set_value(self, value: float) -> None:
+        with tf.device(self.graph.device):
+            self.graph.sess.run(self.value.assign(value))
+
+    def initialize_variables(self) -> None:
+        self.graph.sess.run(self.value.initializer)
+
+    def copy(self, hyperparam: 'Hyperparameter') -> None:
+        self.graph.lock.acquire()
+        hyperparam.graph.lock.acquire()
+        new_value = hyperparam._get_value()
+        self._set_value(new_value)
+        hyperparam.graph.lock.release()
+        self.graph.lock.release()
+
+    def perturb(self) -> None:
+        self.graph.lock.acquire()
+        value = self._get_value()
+        if random.random() < 0.5:
+            value *= self.factor
+        else:
+            value /= self.factor
+        if self.min_value is not None:
+            value = max(value, self.min_value)
+        if self.max_value is not None:
+            value = min(value, self.max_value)
+        self._set_value(value)
+        self.graph.lock.release()
 
 
 num_nets = 0
 
 
-class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
+class PBTAbleMNISTConvNet(HyperparamsPBTAbleGraph['PBTAbleMNISTConvNet']):
     """
     A PBTAbleGraph version of an MNIST convnet that trains itself to minimize
     cross entropy with a variable learning rate and dropout keep probability.
@@ -66,82 +97,52 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
     """
 
     num: int
-    lock: RLock
     vars: List[tf.Variable]
-    copyable_vars: List[tf.Variable]
+    step_num: StepNumHyperparameter
     dataset: Any
     net: MNISTConvNet
-    learning_rate: tf.Variable
-    keep_prob: tf.Variable
+    learning_rate: MNISTFloatHyperparameter
+    keep_prob: MNISTFloatHyperparameter
     train_op: tf.Operation
-    step_num: int
     accuracy: float
     update_accuracy: bool
-    last_update: NetUpdate
 
-    def __init__(self, device: Device, sess: tf.Session,
-                 dataset, learning_rate: float, keep_prob: float) -> None:
+    def __init__(self, device: Device, sess: tf.Session, dataset) -> None:
         """
         Creates a new PBTAbleMNISTConvNet with device <device>, Session <sess>,
-        dataset <dataset>, initial learning rate <learning_rate>, and dropout
-        keep probability <keep_prob>.
+        and dataset <dataset>.
         """
         global num_nets
         super().__init__(device, sess)
         with tf.device(self.device):
             self.num = num_nets
             num_nets += 1
-            self.lock = RLock()
+            self.step_num = StepNumHyperparameter(self)
             self.dataset = dataset
             self.x = tf.placeholder(tf.float32, [None, 784])
             self.y_ = tf.placeholder(tf.float32, [None, 10])
-            self.keep_prob = tf.Variable(keep_prob, trainable=False)
-            self.net = MNISTConvNet(self.x, self.y_, self.keep_prob)
+            self.learning_rate = MNISTFloatHyperparameter('Learning rate', self,
+                                                          10 ** random.gauss(-4, 0.5), 1.2, 0.00001, 0.001)
+            self.keep_prob = MNISTFloatHyperparameter('Keep probability', self,
+                                                      random.gauss(0.5, 0.2), 1.2, 0.1, 1)
+            self.net = MNISTConvNet(self.x, self.y_, self.keep_prob.value)
             net_vars = [self.net.w_conv1, self.net.b_conv1, self.net.w_conv2, self.net.b_conv2,
                         self.net.w_fc1, self.net.b_fc1, self.net.w_fc2, self.net.b_fc2]
-            self.learning_rate = tf.Variable(learning_rate, trainable=False)
             cross_entropy = tf.reduce_mean(
                 tf.nn.softmax_cross_entropy_with_logits(labels=self.y_, logits=self.net.y))
-            optimizer = tf.train.AdamOptimizer(self.learning_rate)
+            optimizer = tf.train.AdamOptimizer(self.learning_rate.value)
             self.train_op = optimizer.minimize(cross_entropy)
-            self.copyable_vars = list(net_vars)
-            self.copyable_vars.extend(optimizer.get_slot(var, name)
-                                      for name in optimizer.get_slot_names() for var in net_vars)
-            self.copyable_vars.extend(optimizer._get_beta_accumulators())
-            self.vars = [self.learning_rate, self.keep_prob]
-            self.vars.extend(self.copyable_vars)
-            self.step_num = 0
+            self.vars = list(net_vars)
+            self.vars.extend(optimizer.get_slot(var, name)
+                             for name in optimizer.get_slot_names() for var in net_vars)
+            self.vars.extend(optimizer._get_beta_accumulators())
             self.accuracy = 0
             self.update_accuracy = True
-            self.last_update = None
 
     def initialize_variables(self) -> None:
-        self.lock.acquire()
+        super().initialize_variables()
         self.sess.run([var.initializer for var in self.vars])
-        self._record_update()
-        self.lock.release()
-
-    def _record_update(self):
-        self.last_update = NetUpdate(self)
-
-    def print_update_history(self):
-        """
-        Prints this PBTAbleMNISTConvNet's hyperparameter update history to the
-        console.
-        """
-        self.lock.acquire()
-        print('Net', self.num, 'hyperparameter update history:')
-        updates = []
-        update = self.last_update
-        while update is not None:
-            updates.append(update)
-            update = update.prev
-        while len(updates) > 0:
-            update = updates.pop()
-            print('Step', update.step_num)
-            print('Learning rate:', update.learning_rate)
-            print('Keep probability:', update.keep_prob)
-        self.lock.release()
+        self.record_update()
 
     def get_accuracy(self) -> float:
         """
@@ -153,7 +154,7 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
             self.accuracy = self.sess.run(self.net.accuracy,
                                           feed_dict={self.x: self.dataset.test.images,
                                                      self.y_: self.dataset.test.labels,
-                                                     self.keep_prob: 1})
+                                                     self.keep_prob.value: 1})
             self.update_accuracy = False
             print('Net', self.num, 'step', self.step_num, 'accuracy:', self.accuracy)
         self.lock.release()
@@ -167,13 +168,13 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         batch = self.dataset.train.next_batch(50)
         self.sess.run(self.train_op, feed_dict={self.x: batch[0], self.y_: batch[1]})
         self.update_accuracy = True
-        self.step_num += 1
+        self.step_num.value += 1
         self.lock.release()
 
     def train(self) -> None:
         print('Net', self.num, 'starting training run at step', self.step_num)
         self._train_step()
-        while self.step_num % 500 != 0:
+        while self.step_num.value % 500 != 0:
             self._train_step()
         print('Net', self.num, 'ending training run at step', self.step_num)
 
@@ -185,27 +186,20 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         self.lock.acquire()
         net.lock.acquire()
         print('Net', self.num, 'copying net', net.num)
-        for i in range(len(self.copyable_vars)):
-            net_var_value = net.sess.run(net.copyable_vars[i])
+        for i in range(len(self.vars)):
+            net_var_value = net.sess.run(net.vars[i])
             with tf.device(self.device):
-                self.sess.run(self.copyable_vars[i].assign(net_var_value))
-        new_learning_rate = net.sess.run(net.learning_rate)
-        new_keep_prob = net.sess.run(net.keep_prob)
-        rand = random.randrange(3)
-        if rand <= 1:
-            new_learning_rate = random_perturbation(new_learning_rate, 1.2, 0.00001, 0.001)
-        if rand >= 1:
-            new_keep_prob = random_perturbation(new_keep_prob, 1.2, 0.1, 1)
-        with tf.device(self.device):
-            self.sess.run(self.learning_rate.assign(new_learning_rate))
-        with tf.device(self.device):
-            self.sess.run(self.keep_prob.assign(new_keep_prob))
-        self.step_num = net.step_num
+                self.sess.run(self.vars[i].assign(net_var_value))
+        rand = random.randrange(1, 2 ** len(self.hyperparams))
+        for i in range(len(self.hyperparams)):
+            self.hyperparams[i].copy(net.hyperparams[i])
+            if rand & (2 ** i) != 0:
+                self.hyperparams[i].perturb()
         self.update_accuracy = True
         self.last_update = net.last_update
         print('Net', self.num, 'finished copying')
         net.lock.release()
-        self._record_update()
+        self.record_update()
         self.lock.release()
 
     def exploit_and_or_explore(self, population: List['PBTAbleMNISTConvNet']) -> None:
@@ -258,13 +252,3 @@ class PBTAbleMNISTConvNet(PBTAbleGraph['PBTAbleMNISTConvNet']):
         else:
             for net in shuffled_pop:
                 net.lock.release()
-
-
-def random_mnist_convnet(device: Device, sess: tf.Session, dataset) -> PBTAbleMNISTConvNet:
-    """
-    Returns a new PBTAbleMNISTConvNet with device <device>, Session <sess>,
-    dataset <dataset>, and randomized initial variable values.
-    """
-    return PBTAbleMNISTConvNet(device, sess, dataset,
-                               10 ** min(max(random.gauss(-4, 0.5), -5), -3),
-                               min(max(random.gauss(0.5, 0.2), 0.1), 1))
