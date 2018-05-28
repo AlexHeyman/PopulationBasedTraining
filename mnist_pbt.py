@@ -35,14 +35,15 @@ class MNISTFloatHyperparameter(Hyperparameter):
         none.
         """
         super().__init__(name, graph)
-        if min_value is not None:
-            value = max(value, min_value)
-        if max_value is not None:
-            value = min(value, max_value)
-        self.value = tf.Variable(value, trainable=False)
-        self.factor = factor
-        self.min_value = min_value
-        self.max_value = max_value
+        with tf.device(self.graph.device):
+            if min_value is not None:
+                value = max(value, min_value)
+            if max_value is not None:
+                value = min(value, max_value)
+            self.value = tf.Variable(value, trainable=False)
+            self.factor = factor
+            self.min_value = min_value
+            self.max_value = max_value
 
     def __str__(self) -> str:
         self.graph.lock.acquire()
