@@ -55,8 +55,7 @@ class MNISTFloatHyperparameter(Hyperparameter):
         return self.graph.sess.run(self.value)
 
     def _set_value(self, value: float) -> None:
-        with tf.device(self.graph.device):
-            self.graph.sess.run(self.value.assign(value))
+        self.value.load(value, self.graph.sess)
 
     def initialize_variables(self) -> None:
         self.graph.sess.run(self.value.initializer)
@@ -64,8 +63,7 @@ class MNISTFloatHyperparameter(Hyperparameter):
     def copy(self, hyperparam: 'Hyperparameter') -> None:
         self.graph.lock.acquire()
         hyperparam.graph.lock.acquire()
-        new_value = hyperparam._get_value()
-        self._set_value(new_value)
+        self._set_value(hyperparam._get_value())
         hyperparam.graph.lock.release()
         self.graph.lock.release()
 
@@ -188,9 +186,7 @@ class PBTAbleMNISTConvNet(HyperparamsPBTAbleGraph['PBTAbleMNISTConvNet']):
         net.lock.acquire()
         print('Net', self.num, 'copying net', net.num)
         for i in range(len(self.vars)):
-            net_var_value = net.sess.run(net.vars[i])
-            with tf.device(self.device):
-                self.sess.run(self.vars[i].assign(net_var_value))
+            self.vars[i].load(net.sess.run(net.vars[i]), self.sess)
         rand = random.randrange(1, 2 ** len(self.hyperparams))
         for i in range(len(self.hyperparams)):
             self.hyperparams[i].copy(net.hyperparams[i])
