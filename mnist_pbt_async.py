@@ -1,6 +1,6 @@
 """
-Performs distributed asynchronous population-based training on MNIST convnets
-for 10,000 steps each, reporting relevant information at the end.
+Performs distributed asynchronous population-based training on MNIST convnets,
+reporting relevant information at the end.
 """
 
 import datetime

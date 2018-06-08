@@ -1,6 +1,6 @@
 """
-Trains a single MNIST convnet to minimize cross entropy for 10,000 steps,
-periodically reporting its accuracy and the time spent training it.
+Trains a single MNIST convnet to minimize cross entropy, periodically reporting
+its accuracy and the time spent training it.
 """
 
 import datetime
