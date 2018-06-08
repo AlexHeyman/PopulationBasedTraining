@@ -312,6 +312,8 @@ class StepNumHyperparameter(Hyperparameter):
     """
     A Hyperparameter that records the number of training steps that a
     HyperparamsPBTAbleGraph has performed.
+
+    A StepNumHyperparameter's value must be updated externally.
     """
 
     value: int
