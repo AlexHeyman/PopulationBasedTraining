@@ -7,7 +7,7 @@ from typing import Any, List
 import math
 import random
 import tensorflow as tf
-from pbt import Device, Hyperparameter, StepNumHyperparameter, HyperparamsPBTAbleGraph
+from pbt import Device, Hyperparameter, HyperparamsPBTAbleGraph
 from mnist_convnet import MNISTConvNet
 
 
@@ -97,7 +97,7 @@ class PBTAbleMNISTConvNet(HyperparamsPBTAbleGraph['PBTAbleMNISTConvNet']):
 
     num: int
     vars: List[tf.Variable]
-    step_num: StepNumHyperparameter
+    step_num: int
     dataset: Any
     net: MNISTConvNet
     learning_rate: MNISTFloatHyperparameter
@@ -116,7 +116,7 @@ class PBTAbleMNISTConvNet(HyperparamsPBTAbleGraph['PBTAbleMNISTConvNet']):
         with tf.device(self.device):
             self.num = num_nets
             num_nets += 1
-            self.step_num = StepNumHyperparameter(self)
+            self.step_num = 0
             self.dataset = dataset
             self.x = tf.placeholder(tf.float32, [None, 784])
             self.y_ = tf.placeholder(tf.float32, [None, 10])
@@ -162,18 +162,23 @@ class PBTAbleMNISTConvNet(HyperparamsPBTAbleGraph['PBTAbleMNISTConvNet']):
     def get_metric(self) -> float:
         return self.get_accuracy()
 
+    def get_step_num(self) -> int:
+        self.lock.acquire()
+        self.lock.release()
+        return self.step_num
+
     def _train_step(self) -> None:
         self.lock.acquire()
         batch = self.dataset.train.next_batch(50)
         self.sess.run(self.train_op, feed_dict={self.x: batch[0], self.y_: batch[1]})
         self.update_accuracy = True
-        self.step_num.value += 1
+        self.step_num += 1
         self.lock.release()
 
     def train(self) -> None:
         print('Net', self.num, 'starting training run at step', self.step_num)
         self._train_step()
-        while self.step_num.value % 500 != 0:
+        while self.step_num % 500 != 0:
             self._train_step()
         print('Net', self.num, 'ending training run at step', self.step_num)
 
@@ -185,6 +190,7 @@ class PBTAbleMNISTConvNet(HyperparamsPBTAbleGraph['PBTAbleMNISTConvNet']):
         self.lock.acquire()
         net.lock.acquire()
         print('Net', self.num, 'copying net', net.num)
+        self.step_num = net.step_num
         for i in range(len(self.vars)):
             self.vars[i].load(net.sess.run(net.vars[i]), self.sess)
         rand = random.randrange(1, 2 ** len(self.hyperparams))

@@ -18,7 +18,7 @@ if __name__ == '__main__':
     for net in cluster.get_population():
         net.get_accuracy()
     training_start = datetime.datetime.now()
-    cluster.train(lambda net, population: net.step_num.value < 10000)
+    cluster.train(lambda net, population: net.step_num < 10000)
     print('Training time:', datetime.datetime.now() - training_start)
     ranked_pop = reversed(sorted(cluster.get_population(), key=lambda net: net.get_accuracy()))
     print()

@@ -55,6 +55,13 @@ class PBTAbleGraph(Generic[T]):
         """
         raise NotImplementedError
 
+    def get_step_num(self) -> int:
+        """
+        Returns the number of training steps that this PBTAbleGraph has
+        performed.
+        """
+        raise NotImplementedError
+
     def train(self) -> None:
         """
         Trains this PBTAbleGraph until it is ready to consider exploitation of
@@ -308,43 +315,6 @@ class Hyperparameter:
         raise NotImplementedError
 
 
-class StepNumHyperparameter(Hyperparameter):
-    """
-    A Hyperparameter that records the number of training steps that a
-    HyperparamsPBTAbleGraph has performed.
-
-    A StepNumHyperparameter's value must be updated externally.
-    """
-
-    value: int
-
-    def __init__(self, graph: 'HyperparamsPBTAbleGraph') -> None:
-        """
-        Creates a new StepNumHyperparameter of <graph>.
-        """
-        super().__init__('Step', graph)
-        self.value = 0
-
-    def __str__(self) -> str:
-        self.graph.lock.acquire()
-        string = str(self.value)
-        self.graph.lock.release()
-        return string
-
-    def initialize_variables(self) -> None:
-        pass
-
-    def copy(self, hyperparam: Hyperparameter) -> None:
-        self.graph.lock.acquire()
-        hyperparam.graph.lock.acquire()
-        self.value = hyperparam.value
-        hyperparam.graph.lock.release()
-        self.graph.lock.release()
-
-    def perturb(self) -> None:
-        pass
-
-
 class HyperparamsUpdate:
     """
     Stores information about a HyperparamsPBTAbleGraph's update of its
@@ -352,6 +322,7 @@ class HyperparamsUpdate:
     """
 
     prev: 'HyperparamsUpdate'
+    step_num: int
     hyperparams: List[Tuple[str, str]]
 
     def __init__(self, graph: 'HyperparamsPBTAbleGraph') -> None:
@@ -360,6 +331,7 @@ class HyperparamsUpdate:
         information.
         """
         self.prev = graph.last_update
+        self.step_num = graph.get_step_num()
         self.hyperparams = [(hyperparam.name, str(hyperparam)) for hyperparam in graph.hyperparams]
 
 
@@ -407,6 +379,7 @@ class HyperparamsPBTAbleGraph(Generic[T], PBTAbleGraph[T]):
             update = update.prev
         while len(updates) > 0:
             update = updates.pop()
+            print('Step', update.step_num)
             for name, value in update.hyperparams:
                 print(name + ': ' + value)
             print()
