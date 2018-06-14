@@ -6,14 +6,15 @@ information at the end.
 import datetime
 from pbt import LocalPBTCluster
 from mnist_pbt import PBTAbleMNISTConvNet
-from tensorflow.examples.tutorials.mnist import input_data
+from tensorflow.models.official.mnist.dataset import train, test
 
 
 if __name__ == '__main__':
-    mnist = input_data.read_data_sets('MNIST_data/', one_hot=True)
+    train_data = train('MNIST_data/').cache()
+    test_data = test('MNIST_data/').cache()
     pop_size = 10
     cluster = LocalPBTCluster[PBTAbleMNISTConvNet](pop_size, lambda device, sess:
-                                                   PBTAbleMNISTConvNet(device, sess, mnist))
+                                                   PBTAbleMNISTConvNet(device, sess, train_data, test_data))
     cluster.initialize_variables()
     for net in cluster.get_population():
         net.get_accuracy()

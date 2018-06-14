@@ -8,7 +8,7 @@ import math
 import random
 import tensorflow as tf
 from pbt import Device, Hyperparameter, HyperparamsPBTAbleGraph
-from mnist_convnet import MNISTConvNet
+from mnist_convnet import MNISTConvNet, MNIST_TRAIN_SIZE, MNIST_TEST_SIZE, MNIST_NUM_CATGS
 
 
 class MNISTFloatHyperparameter(Hyperparameter):
@@ -89,16 +89,13 @@ class PBTAbleMNISTConvNet(HyperparamsPBTAbleGraph['PBTAbleMNISTConvNet']):
     """
     A PBTAbleGraph version of an MNIST convnet that trains itself to minimize
     cross entropy with a variable learning rate and dropout keep probability.
-
-    A PBTAbleMNISTConvNet draws its training and testing data from a TensorFlow
-    MNIST dataset specified in its initializer. The dataset's labels must be in
-    one-hot vector format.
     """
 
     num: int
     vars: List[tf.Variable]
     step_num: int
-    dataset: Any
+    train_next: Any
+    test_next: Any
     net: MNISTConvNet
     learning_rate: MNISTFloatHyperparameter
     keep_prob: MNISTFloatHyperparameter
@@ -106,10 +103,10 @@ class PBTAbleMNISTConvNet(HyperparamsPBTAbleGraph['PBTAbleMNISTConvNet']):
     accuracy: float
     update_accuracy: bool
 
-    def __init__(self, device: Device, sess: tf.Session, dataset) -> None:
+    def __init__(self, device: Device, sess: tf.Session, train_data, test_data) -> None:
         """
         Creates a new PBTAbleMNISTConvNet with device <device>, Session <sess>,
-        and dataset <dataset>.
+        training Dataset <train_data>, and testing Dataset <test_data>.
         """
         global num_nets
         super().__init__(device, sess)
@@ -117,18 +114,23 @@ class PBTAbleMNISTConvNet(HyperparamsPBTAbleGraph['PBTAbleMNISTConvNet']):
             self.num = num_nets
             num_nets += 1
             self.step_num = 0
-            self.dataset = dataset
+            self.train_next = train_data\
+                .shuffle(MNIST_TRAIN_SIZE).batch(50).repeat().make_one_shot_iterator().get_next()
+            self.test_next = test_data\
+                .apply(tf.contrib.data.batch_and_drop_remainder(MNIST_TEST_SIZE))\
+                .repeat().make_one_shot_iterator().get_next()
             self.x = tf.placeholder(tf.float32, [None, 784])
-            self.y_ = tf.placeholder(tf.float32, [None, 10])
+            self.y_ = tf.placeholder(tf.int32, [None])
+            one_hot_y_ = tf.one_hot(self.y_, MNIST_NUM_CATGS)
             self.learning_rate = MNISTFloatHyperparameter('Learning rate', self,
                                                           10 ** random.gauss(-4, 0.5), 1.2, 0.00001, 0.001)
             self.keep_prob = MNISTFloatHyperparameter('Keep probability', self,
                                                       random.gauss(0.5, 0.2), 1.2, 0.1, 1)
-            self.net = MNISTConvNet(self.x, self.y_, self.keep_prob.value)
+            self.net = MNISTConvNet(self.x, one_hot_y_, self.keep_prob.value)
             net_vars = [self.net.w_conv1, self.net.b_conv1, self.net.w_conv2, self.net.b_conv2,
                         self.net.w_fc1, self.net.b_fc1, self.net.w_fc2, self.net.b_fc2]
             cross_entropy = tf.reduce_mean(
-                tf.nn.softmax_cross_entropy_with_logits(labels=self.y_, logits=self.net.y))
+                tf.nn.softmax_cross_entropy_with_logits_v2(labels=one_hot_y_, logits=self.net.y))
             optimizer = tf.train.AdamOptimizer(self.learning_rate.value)
             self.train_op = optimizer.minimize(cross_entropy)
             self.vars = list(net_vars)
@@ -150,9 +152,9 @@ class PBTAbleMNISTConvNet(HyperparamsPBTAbleGraph['PBTAbleMNISTConvNet']):
         """
         self.lock.acquire()
         if self.update_accuracy:
+            test_images, test_labels = self.sess.run(self.test_next)
             self.accuracy = self.sess.run(self.net.accuracy,
-                                          feed_dict={self.x: self.dataset.test.images,
-                                                     self.y_: self.dataset.test.labels,
+                                          feed_dict={self.x: test_images, self.y_: test_labels,
                                                      self.keep_prob.value: 1})
             self.update_accuracy = False
             print('Net', self.num, 'step', self.step_num, 'accuracy:', self.accuracy)
@@ -169,8 +171,8 @@ class PBTAbleMNISTConvNet(HyperparamsPBTAbleGraph['PBTAbleMNISTConvNet']):
 
     def _train_step(self) -> None:
         self.lock.acquire()
-        batch = self.dataset.train.next_batch(50)
-        self.sess.run(self.train_op, feed_dict={self.x: batch[0], self.y_: batch[1]})
+        train_images, train_labels = self.sess.run(self.train_next)
+        self.sess.run(self.train_op, feed_dict={self.x: train_images, self.y_: train_labels})
         self.update_accuracy = True
         self.step_num += 1
         self.lock.release()

@@ -5,6 +5,11 @@ A convolutional neural network for MNIST.
 import tensorflow as tf
 
 
+MNIST_TRAIN_SIZE = 60000
+MNIST_TEST_SIZE = 10000
+MNIST_NUM_CATGS = 10
+
+
 def weight_variable(shape) -> tf.Variable:
     """
     Returns a new weight Variable with shape <shape> for an MNIST convnet.
