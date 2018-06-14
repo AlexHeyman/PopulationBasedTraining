@@ -5,7 +5,7 @@ its accuracy and the time spent training it.
 
 import datetime
 import tensorflow as tf
-from mnist_convnet import MNISTConvNet, MNIST_TRAIN_SIZE, MNIST_TEST_SIZE, MNIST_NUM_CATGS
+from mnist_convnet import MNISTConvNet, MNIST_TRAIN_SIZE, MNIST_TEST_SIZE
 from tensorflow.models.official.mnist.dataset import train, test
 
 
@@ -20,7 +20,7 @@ if __name__ == '__main__':
 
     x = tf.placeholder(tf.float32, [None, 784])
     y_ = tf.placeholder(tf.int32, [None])
-    one_hot_y_ = tf.one_hot(y_, MNIST_NUM_CATGS)
+    one_hot_y_ = tf.one_hot(y_, 10)
     keep_prob = tf.placeholder(tf.float32)
 
     net = MNISTConvNet(x, one_hot_y_, keep_prob)

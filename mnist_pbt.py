@@ -8,7 +8,7 @@ import math
 import random
 import tensorflow as tf
 from pbt import Device, Hyperparameter, HyperparamsPBTAbleGraph
-from mnist_convnet import MNISTConvNet, MNIST_TRAIN_SIZE, MNIST_TEST_SIZE, MNIST_NUM_CATGS
+from mnist_convnet import MNISTConvNet, MNIST_TRAIN_SIZE, MNIST_TEST_SIZE
 
 
 class MNISTFloatHyperparameter(Hyperparameter):
@@ -121,7 +121,7 @@ class PBTAbleMNISTConvNet(HyperparamsPBTAbleGraph['PBTAbleMNISTConvNet']):
                 .repeat().make_one_shot_iterator().get_next()
             self.x = tf.placeholder(tf.float32, [None, 784])
             self.y_ = tf.placeholder(tf.int32, [None])
-            one_hot_y_ = tf.one_hot(self.y_, MNIST_NUM_CATGS)
+            one_hot_y_ = tf.one_hot(self.y_, 10)
             self.learning_rate = MNISTFloatHyperparameter('Learning rate', self,
                                                           10 ** random.gauss(-4, 0.5), 1.2, 0.00001, 0.001)
             self.keep_prob = MNISTFloatHyperparameter('Keep probability', self,
