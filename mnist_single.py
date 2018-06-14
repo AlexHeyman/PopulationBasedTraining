@@ -25,7 +25,7 @@ if __name__ == '__main__':
 
     net = MNISTConvNet(x, one_hot_y_, keep_prob)
     cross_entropy = tf.reduce_mean(
-        tf.nn.softmax_cross_entropy_with_logits(labels=one_hot_y_, logits=net.y))
+        tf.nn.softmax_cross_entropy_with_logits_v2(labels=one_hot_y_, logits=net.y))
     train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
 
     sess = tf.Session()
