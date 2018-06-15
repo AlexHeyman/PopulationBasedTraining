@@ -10,8 +10,8 @@ from tensorflow.models.official.mnist.dataset import train, test
 
 
 if __name__ == '__main__':
-    train_data = train('MNIST_data/').cache()
-    test_data = test('MNIST_data/').cache()
+    train_data = train('MNIST_data/')
+    test_data = test('MNIST_data/')
     pop_size = 10
     cluster = LocalPBTCluster[PBTAbleMNISTConvNet](pop_size, lambda device, sess:
                                                    PBTAbleMNISTConvNet(device, sess, train_data, test_data))
