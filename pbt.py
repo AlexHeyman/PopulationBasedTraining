@@ -292,6 +292,7 @@ class Hyperparameter:
         """
         self.name = name
         self.graph = graph
+        graph.hyperparams.append(self)
 
     def initialize_variables(self) -> None:
         """
@@ -336,8 +337,8 @@ class HyperparamsUpdate:
 
 class HyperparamsPBTAbleGraph(Generic[T], PBTAbleGraph[T]):
     """
-    A PBTAbleGraph that stores its hyperparameters as a list of Hyperparameters
-    that must be manually manipulated.
+    A PBTAbleGraph that stores its hyperparameters as a list of
+    Hyperparameters.
     """
 
     hyperparams: List[Hyperparameter]

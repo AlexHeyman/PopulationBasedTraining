@@ -124,10 +124,8 @@ class PBTAbleMNISTConvNet(HyperparamsPBTAbleGraph['PBTAbleMNISTConvNet']):
             one_hot_y_ = tf.one_hot(self.y_, 10)
             self.learning_rate = MNISTFloatHyperparameter('Learning rate', self,
                                                           10 ** random.gauss(-4, 0.5), 1.2, 0.00001, 0.001)
-            self.hyperparams.append(self.learning_rate)
             self.keep_prob = MNISTFloatHyperparameter('Keep probability', self,
                                                       random.gauss(0.5, 0.2), 1.2, 0.1, 1)
-            self.hyperparams.append(self.keep_prob)
             self.net = MNISTConvNet(self.x, one_hot_y_, self.keep_prob.value)
             cross_entropy = tf.reduce_mean(
                 tf.nn.softmax_cross_entropy_with_logits_v2(labels=one_hot_y_, logits=self.net.y))
