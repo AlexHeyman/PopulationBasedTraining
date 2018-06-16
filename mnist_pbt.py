@@ -129,16 +129,13 @@ class PBTAbleMNISTConvNet(HyperparamsPBTAbleGraph['PBTAbleMNISTConvNet']):
                                                       random.gauss(0.5, 0.2), 1.2, 0.1, 1)
             self.hyperparams.append(self.keep_prob)
             self.net = MNISTConvNet(self.x, one_hot_y_, self.keep_prob.value)
-            net_vars = [self.net.w_conv1, self.net.b_conv1, self.net.w_conv2, self.net.b_conv2,
-                        self.net.w_fc1, self.net.b_fc1, self.net.w_fc2, self.net.b_fc2]
             cross_entropy = tf.reduce_mean(
                 tf.nn.softmax_cross_entropy_with_logits_v2(labels=one_hot_y_, logits=self.net.y))
             optimizer = tf.train.AdamOptimizer(self.learning_rate.value)
             self.train_op = optimizer.minimize(cross_entropy)
-            self.vars = list(net_vars)
-            self.vars.extend(optimizer.get_slot(var, name)
-                             for name in optimizer.get_slot_names() for var in net_vars)
-            self.vars.extend(optimizer._get_beta_accumulators())
+            self.vars = [self.net.w_conv1, self.net.b_conv1, self.net.w_conv2, self.net.b_conv2,
+                         self.net.w_fc1, self.net.b_fc1, self.net.w_fc2, self.net.b_fc2]
+            self.vars.extend(optimizer.variables())
             self.accuracy = 0
             self.update_accuracy = True
 
