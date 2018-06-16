@@ -3,7 +3,7 @@ A convolutional neural network for MNIST that is compatible with
 population-based training.
 """
 
-from typing import Any, List
+from typing import Any, List, Callable
 import math
 import random
 import tensorflow as tf
@@ -17,39 +17,45 @@ class MNISTFloatHyperparameter(Hyperparameter):
     PBTAbleMNISTConvNets.
     """
 
+    value_setter: Callable[[], float]
     value: tf.Variable
     factor: float
     min_value: float
     max_value: float
 
     def __init__(self, name: str, graph: HyperparamsPBTAbleGraph,
-                 value: float, factor: float, min_value: float, max_value: float) -> None:
+                 value_setter: Callable[[], float], factor: float,
+                 min_value: float, max_value: float) -> None:
         """
         Creates a new MNISTFloatHyperparameter of graph <graph> with
         descriptive name <name>.
 
-        <value> is the initial value. <factor> is the factor by which the value
-        will be randomly multiplied or divided when perturbed. <min_value> is
-        the minimum possible value, or None if there should be none.
-        <max_value> is the maximum possible value, or None if there should be
-        none.
+        <value_setter> is a Callable that samples and returns an initial value.
+        <factor> is the factor by which the value will be randomly multiplied
+        or divided when perturbed. <min_value> is the minimum possible value,
+        or None if there should be none. <max_value> is the maximum possible
+        value, or None if there should be none.
         """
         super().__init__(name, graph)
         with tf.device(self.graph.device):
-            if min_value is not None:
-                value = max(value, min_value)
-            if max_value is not None:
-                value = min(value, max_value)
-            self.value = tf.Variable(value, trainable=False)
+            self.value_setter = value_setter
             self.factor = factor
             self.min_value = min_value
             self.max_value = max_value
+            self.value = tf.Variable(self._limited(value_setter()), trainable=False)
 
     def __str__(self) -> str:
         self.graph.lock.acquire()
         string = str(self._get_value())
         self.graph.lock.release()
         return string
+
+    def _limited(self, value: float) -> float:
+        if self.min_value is not None:
+            value = max(value, self.min_value)
+        if self.max_value is not None:
+            value = min(value, self.max_value)
+        return value
 
     def _get_value(self) -> float:
         return self.graph.sess.run(self.value)
@@ -60,7 +66,7 @@ class MNISTFloatHyperparameter(Hyperparameter):
     def initialize_variables(self) -> None:
         self.graph.sess.run(self.value.initializer)
 
-    def copy(self, hyperparam: 'Hyperparameter') -> None:
+    def copy(self, hyperparam: 'MNISTFloatHyperparameter') -> None:
         self.graph.lock.acquire()
         hyperparam.graph.lock.acquire()
         self._set_value(hyperparam._get_value())
@@ -74,11 +80,12 @@ class MNISTFloatHyperparameter(Hyperparameter):
             value *= self.factor
         else:
             value /= self.factor
-        if self.min_value is not None:
-            value = max(value, self.min_value)
-        if self.max_value is not None:
-            value = min(value, self.max_value)
-        self._set_value(value)
+        self._set_value(self._limited(value))
+        self.graph.lock.release()
+
+    def resample(self) -> None:
+        self.graph.lock.acquire()
+        self._set_value(self._limited(self.value_setter()))
         self.graph.lock.release()
 
 
@@ -123,9 +130,10 @@ class PBTAbleMNISTConvNet(HyperparamsPBTAbleGraph['PBTAbleMNISTConvNet']):
             self.y_ = tf.placeholder(tf.int32, [None])
             one_hot_y_ = tf.one_hot(self.y_, 10)
             self.learning_rate = MNISTFloatHyperparameter('Learning rate', self,
-                                                          10 ** random.gauss(-4, 0.5), 1.2, 0.00001, 0.001)
+                                                          lambda: 10 ** random.gauss(-4, 0.5),
+                                                          1.2, 0.00001, 0.001)
             self.keep_prob = MNISTFloatHyperparameter('Keep probability', self,
-                                                      random.gauss(0.5, 0.2), 1.2, 0.1, 1)
+                                                      lambda: random.gauss(0.5, 0.2), 1.2, 0.1, 1)
             self.net = MNISTConvNet(self.x, one_hot_y_, self.keep_prob.value)
             cross_entropy = tf.reduce_mean(
                 tf.nn.softmax_cross_entropy_with_logits_v2(labels=one_hot_y_, logits=self.net.y))
@@ -155,16 +163,18 @@ class PBTAbleMNISTConvNet(HyperparamsPBTAbleGraph['PBTAbleMNISTConvNet']):
                                                      self.keep_prob.value: 1})
             self.update_accuracy = False
             print('Net', self.num, 'step', self.step_num, 'accuracy:', self.accuracy)
+        accuracy = self.accuracy
         self.lock.release()
-        return self.accuracy
+        return accuracy
 
     def get_metric(self) -> float:
         return self.get_accuracy()
 
     def get_step_num(self) -> int:
         self.lock.acquire()
+        step_num = self.step_num
         self.lock.release()
-        return self.step_num
+        return step_num
 
     def _train_step(self) -> None:
         self.lock.acquire()

@@ -314,6 +314,13 @@ class Hyperparameter:
         """
         raise NotImplementedError
 
+    def resample(self) -> None:
+        """
+        Resets this Hyperparameter's value, re-randomizing any random choices
+        that determined it.
+        """
+        raise NotImplementedError
+
 
 class HyperparamsUpdate:
     """
