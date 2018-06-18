@@ -7,6 +7,7 @@ import tensorflow as tf
 
 MNIST_TRAIN_SIZE = 60000
 MNIST_TEST_SIZE = 10000
+MNIST_TEST_BATCH_SIZE = 100
 
 
 def weight_variable(shape) -> tf.Variable:
@@ -39,7 +40,7 @@ def max_pool_2x2(x):
                           padding="SAME")
 
 
-class MNISTConvNet:
+class ConvNet:
     """
     A convolutional neural network for MNIST with two convolutional layers and
     two fully connected layers.
@@ -58,7 +59,7 @@ class MNISTConvNet:
 
     def __init__(self, x, y_, keep_prob):
         """
-        Creates a new MNISTConvNet.
+        Creates a new ConvNet.
 
         <x> is the input batch's images, a tf.float32 Tensor with shape [None,
         784]. <y_> is the batch's labels in one-hot vector form, a tf.float32
