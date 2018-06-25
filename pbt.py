@@ -12,7 +12,7 @@ T = TypeVar('T', bound='Graph')
 Device = Union[str, Callable[[tf.Operation], str], None]
 
 
-class Graph(Generic[T]):
+class Graph:
     """
     A TensorFlow graph that a Cluster can train.
 
@@ -21,8 +21,6 @@ class Graph(Generic[T]):
     A Graph has an associated device on which all of its TensorFlow information
     must be placed, an associated TensorFlow Session, and an RLock that should
     be used to prevent multiple threads from interacting with it at once.
-
-    T is the type of Graph that this Graph forms populations with.
     """
 
     device: Device
@@ -66,20 +64,22 @@ class Graph(Generic[T]):
         """
         raise NotImplementedError
 
-    def exploit_and_or_explore(self, population: List[T]) -> None:
+    def exploit_and_or_explore(self, population: List['Graph']) -> None:
         """
-        Exploits <population> to improve this Graph and/or modifies this Graph
-        to explore a different option, if those actions are judged to be
-        currently necessary.
+        Exploits <population>, a list of Graphs of the same type as this one,
+        to improve this Graph, and/or modifies this Graph to explore a
+        different option, if those actions are judged to be currently
+        necessary.
         """
         raise NotImplementedError
 
     @staticmethod
-    def population_exploit_explore(population: List[T]) -> None:
+    def population_exploit_explore(population: List['Graph']) -> None:
         """
-        Causes all of the Graphs in <population> to exploit and/or explore each
-        other simultaneously, like a combined version of all of the Graphs'
-        exploit_and_or_explore() methods.
+        Causes all of the Graphs in <population>, a list of Graphs of this
+        type, to exploit and/or explore each other simultaneously, like a
+        combined version of all of the Graphs' exploit_and_or_explore()
+        methods.
         """
         raise NotImplementedError
 
@@ -346,7 +346,7 @@ class HyperparamsUpdate:
                 self.hyperparams.append((hyperparam.name, str(hyperparam)))
 
 
-class HyperparamsGraph(Generic[T], Graph[T]):
+class HyperparamsGraph(Graph):
     """
     A Graph that stores its hyperparameters as a list of Hyperparameters.
     """

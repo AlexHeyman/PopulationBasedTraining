@@ -207,7 +207,7 @@ class OptimizerHyperparameter(Hyperparameter):
 num_nets = 0
 
 
-class ConvNet(HyperparamsGraph['ConvNet']):
+class ConvNet(HyperparamsGraph):
     """
     A PBT-compatible version of an MNIST convnet that trains itself to minimize
     cross entropy with a variable learning rate and dropout keep probability.
