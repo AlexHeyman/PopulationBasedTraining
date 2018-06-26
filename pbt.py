@@ -368,7 +368,7 @@ class HyperparamsGraph(Graph):
             hyperparam.initialize_variables()
         self.record_update()
 
-    def record_update(self):
+    def record_update(self) -> None:
         """
         Records this HyperparamsGraph's current information as a new update to
         its hyperparameters.
@@ -377,7 +377,21 @@ class HyperparamsGraph(Graph):
         self.last_update = HyperparamsUpdate(self)
         self.lock.release()
 
-    def print_update_history(self):
+    def get_update_history(self) -> List[HyperparamsUpdate]:
+        """
+        Returns a list of this HyperparamsGraph's HyperparamsUpdates in order
+        from least to most recent.
+        """
+        self.lock.acquire()
+        updates = []
+        update = self.last_update
+        while update is not None:
+            updates.append(update)
+            update = update.prev
+        self.lock.release()
+        return list(reversed(updates))
+
+    def print_update_history(self) -> None:
         """
         Prints this HyperparamsGraph's hyperparameter update history to the
         console.
