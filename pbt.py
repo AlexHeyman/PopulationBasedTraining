@@ -3,9 +3,10 @@ An implementation of population-based training of neural networks for
 TensorFlow.
 """
 
-from typing import Union, List, Tuple, Callable, TypeVar, Generic
+from typing import Union, List, Callable, TypeVar, Generic
 from threading import Thread, RLock
 from multiprocessing import Process, Queue
+from collections import OrderedDict
 import tensorflow as tf
 
 T = TypeVar('T', bound='Graph')
@@ -331,7 +332,7 @@ class HyperparamsUpdate:
 
     prev: 'HyperparamsUpdate'
     step_num: int
-    hyperparams: List[Tuple[str, str]]
+    hyperparams: OrderedDict
 
     def __init__(self, graph: 'HyperparamsGraph') -> None:
         """
@@ -340,10 +341,10 @@ class HyperparamsUpdate:
         """
         self.prev = graph.last_update
         self.step_num = graph.get_step_num()
-        self.hyperparams = []
+        self.hyperparams = OrderedDict()
         for hyperparam in graph.hyperparams:
             if not hyperparam.hidden:
-                self.hyperparams.append((hyperparam.name, str(hyperparam)))
+                self.hyperparams[hyperparam.name] = str(hyperparam)
 
 
 class HyperparamsGraph(Graph):
@@ -405,7 +406,7 @@ class HyperparamsGraph(Graph):
         while len(updates) > 0:
             update = updates.pop()
             print('Step', update.step_num)
-            for name, value in update.hyperparams:
+            for name, value in update.hyperparams.items():
                 print(name + ': ' + value)
             print()
         self.lock.release()
