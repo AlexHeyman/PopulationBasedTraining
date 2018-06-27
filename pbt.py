@@ -3,7 +3,7 @@ An implementation of population-based training of neural networks for
 TensorFlow.
 """
 
-from typing import Union, List, Callable, TypeVar, Generic
+from typing import Union, Iterable, List, Callable, TypeVar, Generic
 from threading import Thread, RLock
 from multiprocessing import Process, Queue
 from collections import OrderedDict
@@ -378,10 +378,10 @@ class HyperparamsGraph(Graph):
         self.last_update = HyperparamsUpdate(self)
         self.lock.release()
 
-    def get_update_history(self) -> List[HyperparamsUpdate]:
+    def get_update_history(self) -> Iterable[HyperparamsUpdate]:
         """
-        Returns a list of this HyperparamsGraph's HyperparamsUpdates in order
-        from least to most recent.
+        Returns an iterable of this HyperparamsGraph's HyperparamsUpdates in
+        order from least to most recent.
         """
         self.lock.acquire()
         updates = []
@@ -390,7 +390,7 @@ class HyperparamsGraph(Graph):
             updates.append(update)
             update = update.prev
         self.lock.release()
-        return list(reversed(updates))
+        return reversed(updates)
 
     def print_update_history(self) -> None:
         """
