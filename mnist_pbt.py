@@ -39,12 +39,12 @@ class FloatHyperparameter(Hyperparameter):
     def _set_value(self, value: float) -> None:
         self.value.load(value, self.graph.sess)
 
-    def __init__(self, name: str, graph: HyperparamsGraph, hidden: bool,
+    def __init__(self, name: str, graph: HyperparamsGraph, unused: bool,
                  value_setter: Callable[[], float], factor: float,
                  min_value: float, max_value: float) -> None:
         """
         Creates a new FloatHyperparameter of graph <graph> with descriptive
-        name <name> and initial hidden status <hidden>.
+        name <name> and initial unused status <unused>.
 
         <value_setter> is a Callable that samples and returns an initial value.
         <factor> is the factor by which the value will be randomly multiplied
@@ -52,7 +52,7 @@ class FloatHyperparameter(Hyperparameter):
         or None if there should be none. <max_value> is the maximum possible
         value, or None if there should be none.
         """
-        super().__init__(name, graph, hidden)
+        super().__init__(name, graph, unused)
         with tf.device(self.graph.device):
             self.value_setter = value_setter
             self.factor = factor
@@ -125,9 +125,9 @@ class OptimizerHyperparameter(Hyperparameter):
     opt_info: List[OptimizerInfo]
     opt_index: int
 
-    def _set_sub_hyperparams_hidden(self, hidden: bool) -> None:
+    def _set_sub_hyperparams_unused(self, unused: bool) -> None:
         for hyperparam in self.opt_info[self.opt_index].hyperparams:
-            hyperparam.hidden = hidden
+            hyperparam.unused = unused
 
     def __init__(self, graph: HyperparamsGraph, to_minimize) -> None:
         """
@@ -154,7 +154,7 @@ class OptimizerHyperparameter(Hyperparameter):
             optimizer = tf.train.AdamOptimizer(learning_rate.value)
             self.opt_info.append(OptimizerInfo(optimizer, to_minimize, [learning_rate]))
             self.opt_index = random.randrange(len(self.opt_info))
-            self._set_sub_hyperparams_hidden(False)
+            self._set_sub_hyperparams_unused(False)
 
     def __str__(self) -> str:
         self.graph.lock.acquire()
@@ -168,25 +168,25 @@ class OptimizerHyperparameter(Hyperparameter):
     def copy(self, hyperparam: 'OptimizerHyperparameter') -> None:
         self.graph.lock.acquire()
         hyperparam.graph.lock.acquire()
-        self._set_sub_hyperparams_hidden(True)
+        self._set_sub_hyperparams_unused(True)
         opt_index = hyperparam.opt_index
         self.opt_index = opt_index
         vars = self.opt_info[opt_index].vars
         hyperparam_vars = hyperparam.opt_info[opt_index].vars
         for i in range(len(vars)):
             vars[i].load(hyperparam.graph.sess.run(hyperparam_vars[i]), self.graph.sess)
-        self._set_sub_hyperparams_hidden(False)
+        self._set_sub_hyperparams_unused(False)
         hyperparam.graph.lock.release()
         self.graph.lock.release()
 
     def _switch_to_opt(self, opt_index: int):
-        self._set_sub_hyperparams_hidden(True)
+        self._set_sub_hyperparams_unused(True)
         self.opt_index = opt_index
         info = self.opt_info[self.opt_index]
         self.graph.sess.run([var.initializer for var in info.vars])
         for hyperparam in info.hyperparams:
             hyperparam.resample()
-            hyperparam.hidden = False
+            hyperparam.unused = False
 
     def perturb(self) -> None:
         self.graph.lock.acquire()
@@ -325,11 +325,19 @@ class ConvNet(HyperparamsGraph):
         self.step_num = net.step_num
         for i in range(len(self.vars)):
             self.vars[i].load(net.sess.run(net.vars[i]), self.sess)
-        rand = random.randrange(1, 2 ** len(self.hyperparams))
         for i in range(len(self.hyperparams)):
             self.hyperparams[i].copy(net.hyperparams[i])
-            if rand & (2 ** i) != 0:
-                self.hyperparams[i].perturb()
+        # Ensure that at least one used hyperparameter is perturbed
+        rand = random.randrange(1, 2 ** sum(1 for hyperparam in self.hyperparams if not hyperparam.unused))
+        perturbed_used_hyperparam = False
+        for i in range(len(self.hyperparams)):
+            hyperparam = self.hyperparams[i]
+            if perturbed_used_hyperparam or hyperparam.unused:
+                if random.random() < 0.5:
+                    hyperparam.perturb()
+            elif rand & (2 ** i) != 0:
+                hyperparam.perturb()
+                perturbed_used_hyperparam = True
         self.update_accuracy = True
         self.last_update = net.last_update
         print('Net', self.num, 'finished copying')
@@ -393,7 +401,7 @@ RED = '#FF0000'
 ORANGE = '#FF8000'
 GREEN = '#008000'
 BLUE = '#0000FF'
-LIGHTER = {RED: '#FF8080', ORANGE: '#FFC080', GREEN: '#80C080', BLUE: '#8080FF'}
+LIGHTER = {RED: '#FFC0C0', ORANGE: '#FFE0C0', GREEN: '#C0E0C0', BLUE: '#C0C0FF'}
 IDENTITY = {color: color for color in LIGHTER.keys()}
 OPTS = ['AdagradOptimizer', 'AdamOptimizer', 'GradientDescentOptimizer', 'MomentumOptimizer']
 OPT_COLORS = {'AdagradOptimizer': RED,

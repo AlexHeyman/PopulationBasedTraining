@@ -278,22 +278,22 @@ class Hyperparameter:
     A Hyperparameter's __str__() method should return a string representing its
     value.
 
-    A Hyperparameter may be considered hidden, in which case new
+    A Hyperparameter may be declared unused, in which case new
     HyperparamsUpdates will not record it.
     """
 
     name: str
     graph: 'HyperparamsGraph'
-    hidden: bool
+    unused: bool
 
-    def __init__(self, name: str, graph: 'HyperparamsGraph', hidden: bool) -> None:
+    def __init__(self, name: str, graph: 'HyperparamsGraph', unused: bool) -> None:
         """
         Creates a new Hyperparameter of <graph> with descriptive name <name>
-        and initial hidden status <hidden>.
+        and initial unused status <unused>.
         """
         self.name = name
         self.graph = graph
-        self.hidden = hidden
+        self.unused = unused
         graph.hyperparams.append(self)
 
     def initialize_variables(self) -> None:
@@ -343,7 +343,7 @@ class HyperparamsUpdate:
         self.step_num = graph.get_step_num()
         self.hyperparams = OrderedDict()
         for hyperparam in graph.hyperparams:
-            if not hyperparam.hidden:
+            if not hyperparam.unused:
                 self.hyperparams[hyperparam.name] = str(hyperparam)
 
 
