@@ -481,17 +481,18 @@ def plot_hyperparams(cluster: Cluster[ConvNet], directory: str) -> None:
     kp_fig, kp_ax = plt.subplots()
     kp_ax.set(title='Dropout keep probability', xlabel='Step', ylabel='Keep probability')
     kp_ax.set_xlim(0, max_step_num)
-    kp_ax.set_ylim(0, 1)
+    kp_ax.set_ylim(-0.01, 1.01)
     # Optimizer and learning rate plot
     opt_fig, opt_ax = plt.subplots()
     opt_ax.set(title='Optimizer and learning rate', xlabel='Step', ylabel='Learning rate (log)')
     opt_ax.set_xlim(0, max_step_num)
+    opt_ax.set_ylim(-6.06, 0.06)
     opt_ax.legend(OPT_LINES, OPTS, loc='best')
     # Momentum plot
     mom_fig, mom_ax = plt.subplots()
     mom_ax.set(title='Momentum optimizer momentum', xlabel='Step', ylabel='Momentum')
     mom_ax.set_xlim(0, max_step_num)
-    mom_ax.set_ylim(0, 1)
+    mom_ax.set_ylim(-0.01, 1.01)
     # Add data to plots
     _plot_net_hyperparams(ranked_pop[0], max_step_num, kp_ax, opt_ax, mom_ax, True)
     for i in range(1, len(ranked_pop)):
