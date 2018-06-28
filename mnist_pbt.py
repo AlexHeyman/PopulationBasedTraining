@@ -6,8 +6,12 @@ population-based training.
 from typing import Any, List, Callable
 import math
 import random
+import os
+from matplotlib.axes import Axes
+from matplotlib.lines import Line2D
+import matplotlib.pyplot as plt
 import tensorflow as tf
-from pbt import Device, Hyperparameter, HyperparamsGraph
+from pbt import Device, Cluster, Hyperparameter, HyperparamsGraph
 from mnist_convnet import ConvNet as MNISTConvNet, MNIST_TRAIN_SIZE, MNIST_TEST_SIZE, MNIST_TEST_BATCH_SIZE
 
 
@@ -382,3 +386,118 @@ class ConvNet(HyperparamsGraph):
         else:
             for net in shuffled_pop:
                 net.lock.release()
+
+
+RED = '#FF0000'
+ORANGE = '#FF8000'
+GREEN = '#008000'
+BLUE = '#0000FF'
+LIGHTER = {RED: '#FF8080', ORANGE: '#FFC080', GREEN: '#80C080', BLUE: '#8080FF'}
+IDENTITY = {color: color for color in LIGHTER.keys()}
+OPTS = ['AdagradOptimizer', 'AdamOptimizer', 'GradientDescentOptimizer', 'MomentumOptimizer']
+OPT_COLORS = {'AdagradOptimizer': RED,
+              'AdamOptimizer': ORANGE,
+              'GradientDescentOptimizer': GREEN,
+              'MomentumOptimizer': BLUE
+              }
+_NO_DATA = []
+OPT_LINES = [Line2D(_NO_DATA, _NO_DATA, color=OPT_COLORS[opt]) for opt in OPTS]
+
+
+def _plot_net_hyperparams(net: ConvNet, max_step_num: int,
+                          kp_ax: Axes, opt_ax: Axes, mom_ax: Axes, best: bool) -> None:
+    if best:
+        colormap = IDENTITY
+        zorder = 1
+    else:
+        colormap = LIGHTER
+        zorder = 0
+    current_opt = None
+    # Keep probability data
+    kp_step_nums = []
+    kps = []
+    # Learning rate data since the optimizer last changed
+    lr_step_nums = None
+    log_lrs = None
+    # Momentum data since the optimizer last became MomentumOptimizer
+    mom_step_nums = None
+    moms = None
+    for update in net.get_update_history():
+        new_opt = update.hyperparams['Optimizer']
+        if new_opt != current_opt:
+            if current_opt is not None:
+                # Finish and plot a segment of learning rate data
+                lr_step_nums.append(update.step_num)
+                log_lrs.append(log_lrs[-1])
+                opt_ax.step(lr_step_nums, log_lrs,
+                            colormap[OPT_COLORS[current_opt]], where='post', zorder=zorder)
+                if current_opt == 'MomentumOptimizer':
+                    # Finish and plot a segment of momentum data
+                    mom_step_nums.append(update.step_num)
+                    moms.append(moms[-1])
+                    mom_ax.step(mom_step_nums, moms, colormap[BLUE], where='post', zorder=zorder)
+            current_opt = new_opt
+            # Start a new segment of learning rate data
+            lr_step_nums = []
+            log_lrs = []
+            if current_opt == 'MomentumOptimizer':
+                # Start a new segment of momentum data
+                mom_step_nums = []
+                moms = []
+        # Add the new update to the appropriate data
+        kp_step_nums.append(update.step_num)
+        kps.append(float(update.hyperparams['Keep probability']))
+        lr_step_nums.append(update.step_num)
+        log_lrs.append(math.log(float(update.hyperparams['Learning rate']), 10))
+        if current_opt == 'MomentumOptimizer':
+            mom_step_nums.append(update.step_num)
+            moms.append(float(update.hyperparams['Momentum']))
+    # Plot the keep probability data
+    kp_step_nums.append(max_step_num)
+    kps.append(kps[-1])
+    kp_ax.step(kp_step_nums, kps, colormap[BLUE], where='post', zorder=zorder)
+    # Finish and plot the last segment of learning rate data
+    lr_step_nums.append(max_step_num)
+    log_lrs.append(log_lrs[-1])
+    opt_ax.step(lr_step_nums, log_lrs, colormap[OPT_COLORS[current_opt]], where='post', zorder=zorder)
+    if current_opt == 'MomentumOptimizer':
+        # Finish and plot the last segment of momentum data
+        mom_step_nums.append(max_step_num)
+        moms.append(moms[-1])
+        mom_ax.step(mom_step_nums, moms, colormap[BLUE], where='post', zorder=zorder)
+
+
+def plot_hyperparams(cluster: Cluster[ConvNet], directory: str) -> None:
+    """
+    Creates step plots of the hyperparameter update histories of <cluster>'s
+    population and saves them as images in <directory>.
+
+    <directory> will be created if it does not already exist.
+    """
+    ranked_pop = sorted(cluster.get_population(), key=lambda net: -net.get_accuracy())
+    max_step_num = max(net.step_num for net in ranked_pop)
+    # Keep probability plot
+    kp_fig, kp_ax = plt.subplots()
+    kp_ax.set(title='Dropout keep probability', xlabel='Step', ylabel='Keep probability')
+    kp_ax.set_xlim(0, max_step_num)
+    kp_ax.set_ylim(0, 1)
+    # Optimizer and learning rate plot
+    opt_fig, opt_ax = plt.subplots()
+    opt_ax.set(title='Optimizer and learning rate', xlabel='Step', ylabel='Learning rate (log)')
+    opt_ax.set_xlim(0, max_step_num)
+    opt_ax.legend(OPT_LINES, OPTS, loc='best')
+    # Momentum plot
+    mom_fig, mom_ax = plt.subplots()
+    mom_ax.set(title='Momentum optimizer momentum', xlabel='Step', ylabel='Momentum')
+    mom_ax.set_xlim(0, max_step_num)
+    mom_ax.set_ylim(0, 1)
+    # Add data to plots
+    _plot_net_hyperparams(ranked_pop[0], max_step_num, kp_ax, opt_ax, mom_ax, True)
+    for i in range(1, len(ranked_pop)):
+        _plot_net_hyperparams(ranked_pop[i], max_step_num, kp_ax, opt_ax, mom_ax, False)
+    # Save plots
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    kp_fig.savefig(os.path.join(directory, "keep_probability.png"))
+    opt_fig.savefig(os.path.join(directory, "optimizer_and_learning_rate.png"))
+    mom_fig.savefig(os.path.join(directory, "momentum.png"))

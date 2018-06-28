@@ -5,7 +5,7 @@ reporting relevant information at the end.
 
 import datetime
 from pbt import AsyncCluster
-from mnist_pbt import ConvNet
+from mnist_pbt import ConvNet, plot_hyperparams
 from tensorflow.models.official.mnist.dataset import train, test
 
 
@@ -22,7 +22,7 @@ if __name__ == '__main__':
     training_start = datetime.datetime.now()
     cluster.train(lambda net, population: net.step_num < 20000)
     print('Training time:', datetime.datetime.now() - training_start)
-    ranked_pop = reversed(sorted(cluster.get_population(), key=lambda net: net.get_accuracy()))
+    ranked_pop = sorted(cluster.get_population(), key=lambda net: -net.get_accuracy())
     print()
     for net in ranked_pop:
         print('Net', net.num)
@@ -30,3 +30,4 @@ if __name__ == '__main__':
         print('Hyperparameter update history:')
         print()
         net.print_update_history()
+    plot_hyperparams(cluster, 'plots/')
