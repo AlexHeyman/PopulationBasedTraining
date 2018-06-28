@@ -214,7 +214,8 @@ num_nets = 0
 class ConvNet(HyperparamsGraph):
     """
     A PBT-compatible version of an MNIST convnet that trains itself to minimize
-    cross entropy with a variable learning rate and dropout keep probability.
+    cross entropy with a variable optimizer, optimizer parameters, and dropout
+    keep probability.
     """
 
     num: int
