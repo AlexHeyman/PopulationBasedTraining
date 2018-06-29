@@ -426,33 +426,34 @@ def _plot_net_hyperparams(net: ConvNet, max_step_num: int,
     kp_step_nums = []
     kps = []
     # Learning rate data since the optimizer last changed
-    lr_step_nums = None
-    log_lrs = None
+    lr_step_nums = []
+    log_lrs = []
     # Momentum data since the optimizer last became MomentumOptimizer
-    mom_step_nums = None
-    moms = None
+    mom_step_nums = []
+    moms = []
     for update in net.get_update_history():
         new_opt = update.hyperparams['Optimizer']
         if new_opt != current_opt:
             if current_opt is not None:
                 # Finish and plot a segment of learning rate data
+                last_log_lr = log_lrs[-1]
                 lr_step_nums.append(update.step_num)
-                log_lrs.append(log_lrs[-1])
+                log_lrs.append(last_log_lr)
                 opt_ax.step(lr_step_nums, log_lrs,
                             colormap[OPT_COLORS[current_opt]], where='post', zorder=zorder)
+                # Start a new one
+                lr_step_nums = [update.step_num]
+                log_lrs = [last_log_lr]
                 if current_opt == 'MomentumOptimizer':
                     # Finish and plot a segment of momentum data
+                    last_mom = moms[-1]
                     mom_step_nums.append(update.step_num)
-                    moms.append(moms[-1])
+                    moms.append(last_mom)
                     mom_ax.step(mom_step_nums, moms, colormap[BLUE], where='post', zorder=zorder)
+                    # Start a new one
+                    mom_step_nums = [update.step_num]
+                    moms = [last_mom]
             current_opt = new_opt
-            # Start a new segment of learning rate data
-            lr_step_nums = []
-            log_lrs = []
-            if current_opt == 'MomentumOptimizer':
-                # Start a new segment of momentum data
-                mom_step_nums = []
-                moms = []
         # Add the new update to the appropriate data
         kp_step_nums.append(update.step_num)
         kps.append(float(update.hyperparams['Keep probability']))
