@@ -3,14 +3,12 @@ An implementation of population-based training of neural networks for
 TensorFlow.
 """
 
-from typing import Union, Iterable, List, Callable, TypeVar, Generic
-from threading import Thread, RLock
-from multiprocessing import Process, Queue
+from typing import Iterable, List, Callable, TypeVar, Generic
+from threading import RLock
 from collections import OrderedDict
 import tensorflow as tf
 
 T = TypeVar('T', bound='Graph')
-Device = Union[str, Callable[[tf.Operation], str], None]
 
 
 class Graph:
@@ -19,21 +17,17 @@ class Graph:
 
     A Graph need not have a TensorFlow Graph object all to itself.
 
-    A Graph has an associated device on which all of its TensorFlow information
-    must be placed, an associated TensorFlow Session, and an RLock that should
+    A Graph has an associated TensorFlow Session and an RLock that should
     be used to prevent multiple threads from interacting with it at once.
     """
 
-    device: Device
     sess: tf.Session
     lock: RLock
 
-    def __init__(self, device: Device, sess: tf.Session) -> None:
+    def __init__(self, sess: tf.Session) -> None:
         """
-        Creates a new Graph with associated device <device> and Session
-        <session>.
+        Creates a new Graph with associated Session <sess>.
         """
-        self.device = device
         self.sess = sess
         self.lock = RLock()
 
@@ -138,17 +132,17 @@ class LocalCluster(Generic[T], Cluster[T]):
     sess: tf.Session
     population: List[T]
 
-    def __init__(self, pop_size: int, graph_maker: Callable[[Device, tf.Session], T]) -> None:
+    def __init__(self, pop_size: int, graph_maker: Callable[[tf.Session], T]) -> None:
         """
         Creates a new LocalCluster with <pop_size> graphs returned by
         <graph_maker> as its population.
 
         <pop_size> is the number of Graphs that will make up this
         LocalCluster's population. <graph_maker> is a Callable that returns a
-        new T with the specified device and Session each time it is called.
+        new T with the specified Session each time it is called.
         """
         self.sess = tf.Session()
-        self.population = [graph_maker(None, self.sess) for _ in range(pop_size)]
+        self.population = [graph_maker(self.sess) for _ in range(pop_size)]
 
     def get_population(self) -> List[T]:
         return self.population
@@ -187,88 +181,6 @@ class LocalCluster(Generic[T], Cluster[T]):
                     break
             else:
                 break
-
-
-def _localhost_process(queue: Queue, addresses: List[str], task_index: int) -> None:
-    cluster = tf.train.ClusterSpec({'worker': addresses})
-    server = tf.train.Server(cluster, job_name='worker', task_index=task_index)
-    queue.put(server.target)
-    server.join()
-
-
-def _async_thread(graph: T, population: List[T], training_cond: Callable[[T, List[T]], bool]) -> None:
-    while training_cond(graph, population):
-        graph.train()
-        if not training_cond(graph, population):
-            break
-        graph.exploit_and_or_explore(population)
-
-
-class AsyncCluster(Generic[T], Cluster[T]):
-    """
-    A Cluster that uses distributed TensorFlow to train its Graphs on different
-    devices asynchronously.
-    """
-
-    cluster: tf.train.ClusterSpec
-    population: List[T]
-
-    def __init__(self, addresses: List[str], graph_maker: Callable[[Device, tf.Session], T]) -> None:
-        """
-        Creates a new AsyncCluster with graphs returned by <graph_maker> as its
-        population.
-
-        <addresses> is the list of network addresses of the devices on which
-        this AsyncCluster will host its tasks, with each task training one
-        Graph. <graph_maker> is a Callable that returns a new T with the
-        specified device and Session each time it is called.
-        """
-        self.cluster = tf.train.ClusterSpec({'worker': addresses})
-        self.population = []
-        for task_index in range(len(addresses)):
-            device = '/job:worker/task:' + str(task_index)
-            if addresses[task_index].startswith('localhost'):
-                queue = Queue()
-                process = Process(target=_localhost_process, args=(queue, addresses, task_index))
-                process.daemon = True
-                process.start()
-                target = queue.get()
-            else:
-                server = tf.train.Server(self.cluster, job_name='worker', task_index=task_index)
-                target = server.target
-            sess = tf.Session(target)
-            self.population.append(graph_maker(device, sess))
-
-    def get_population(self) -> List[T]:
-        return self.population
-
-    def initialize_variables(self):
-        for graph in self.population:
-            graph.initialize_variables()
-
-    def get_highest_metric_graph(self) -> T:
-        highest_graph = None
-        highest_metric = None
-        for graph in self.population:
-            if highest_graph is None:
-                highest_graph = graph
-                highest_metric = graph.get_metric()
-            else:
-                metric = graph.get_metric()
-                if metric > highest_metric:
-                    highest_graph = graph
-                    highest_metric = metric
-        return highest_graph
-
-    def train(self, training_cond: Callable[[T, List[T]], bool]) -> None:
-        threads = []
-        for graph in self.population:
-            threads.append(Thread(target=_async_thread, name='PBT thread for ' + graph.device,
-                                  args=(graph, self.population, training_cond), daemon=True))
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
 
 
 class Hyperparameter:
@@ -355,12 +267,11 @@ class HyperparamsGraph(Graph):
     hyperparams: List[Hyperparameter]
     last_update: HyperparamsUpdate
 
-    def __init__(self, device: Device, sess: tf.Session) -> None:
+    def __init__(self, sess: tf.Session) -> None:
         """
-        Creates a new HyperparamsGraph with associated device <device> and
-        Session <session>.
+        Creates a new HyperparamsGraph with associated Session <sess>.
         """
-        super().__init__(device, sess)
+        super().__init__(sess)
         self.hyperparams = []
         self.last_update = None
 

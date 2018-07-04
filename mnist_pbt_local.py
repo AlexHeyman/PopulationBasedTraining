@@ -14,7 +14,7 @@ if __name__ == '__main__':
     test_data = test('MNIST_data/')
     pop_size = 50
     cluster = LocalCluster[ConvNet](pop_size,
-                                    lambda device, sess: ConvNet(device, sess, train_data, test_data))
+                                    lambda sess: ConvNet(sess, train_data, test_data))
     cluster.initialize_variables()
     for net in cluster.get_population():
         net.get_accuracy()

@@ -11,7 +11,7 @@ from matplotlib.axes import Axes
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from pbt import Device, Cluster, Hyperparameter, HyperparamsGraph
+from pbt import Cluster, Hyperparameter, HyperparamsGraph
 from mnist_convnet import ConvNet as MNISTConvNet, MNIST_TRAIN_SIZE, MNIST_TEST_SIZE, MNIST_TEST_BATCH_SIZE
 
 
@@ -53,12 +53,11 @@ class FloatHyperparameter(Hyperparameter):
         value, or None if there should be none.
         """
         super().__init__(name, graph, unused)
-        with tf.device(self.graph.device):
-            self.value_setter = value_setter
-            self.factor = factor
-            self.min_value = min_value
-            self.max_value = max_value
-            self.value = tf.Variable(self._limited(value_setter()), trainable=False)
+        self.value_setter = value_setter
+        self.factor = factor
+        self.min_value = min_value
+        self.max_value = max_value
+        self.value = tf.Variable(self._limited(value_setter()), trainable=False)
 
     def __str__(self) -> str:
         self.graph.lock.acquire()
@@ -135,26 +134,25 @@ class OptimizerHyperparameter(Hyperparameter):
         can be used to minimize the TensorFlow Tensor <to_minimize>.
         """
         super().__init__('Optimizer', graph, False)
-        with tf.device(self.graph.device):
-            self.opt_info = []
-            learning_rate = FloatHyperparameter('Learning rate', self.graph, True,
-                                                lambda: 10 ** random.uniform(-6, 0), 1.2, 10 ** -6, 1)
-            # GradientDescentOptimizer
-            optimizer = tf.train.GradientDescentOptimizer(learning_rate.value)
-            self.opt_info.append(OptimizerInfo(optimizer, to_minimize, [learning_rate]))
-            # AdagradOptimizer
-            optimizer = tf.train.AdagradOptimizer(learning_rate.value, 0.01)
-            self.opt_info.append(OptimizerInfo(optimizer, to_minimize, [learning_rate]))
-            # MomentumOptimizer
-            momentum = FloatHyperparameter('Momentum', self.graph, True,
-                                           lambda: random.uniform(0, 1), 1.2, 0, 1)
-            optimizer = tf.train.MomentumOptimizer(learning_rate.value, momentum.value)
-            self.opt_info.append(OptimizerInfo(optimizer, to_minimize, [learning_rate, momentum]))
-            # AdamOptimizer
-            optimizer = tf.train.AdamOptimizer(learning_rate.value)
-            self.opt_info.append(OptimizerInfo(optimizer, to_minimize, [learning_rate]))
-            self.opt_index = random.randrange(len(self.opt_info))
-            self._set_sub_hyperparams_unused(False)
+        self.opt_info = []
+        learning_rate = FloatHyperparameter('Learning rate', self.graph, True,
+                                            lambda: 10 ** random.uniform(-6, 0), 1.2, 10 ** -6, 1)
+        # GradientDescentOptimizer
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate.value)
+        self.opt_info.append(OptimizerInfo(optimizer, to_minimize, [learning_rate]))
+        # AdagradOptimizer
+        optimizer = tf.train.AdagradOptimizer(learning_rate.value, 0.01)
+        self.opt_info.append(OptimizerInfo(optimizer, to_minimize, [learning_rate]))
+        # MomentumOptimizer
+        momentum = FloatHyperparameter('Momentum', self.graph, True,
+                                       lambda: random.uniform(0, 1), 1.2, 0, 1)
+        optimizer = tf.train.MomentumOptimizer(learning_rate.value, momentum.value)
+        self.opt_info.append(OptimizerInfo(optimizer, to_minimize, [learning_rate, momentum]))
+        # AdamOptimizer
+        optimizer = tf.train.AdamOptimizer(learning_rate.value)
+        self.opt_info.append(OptimizerInfo(optimizer, to_minimize, [learning_rate]))
+        self.opt_index = random.randrange(len(self.opt_info))
+        self._set_sub_hyperparams_unused(False)
 
     def __str__(self) -> str:
         self.graph.lock.acquire()
@@ -229,35 +227,34 @@ class ConvNet(HyperparamsGraph):
     accuracy: float
     update_accuracy: bool
 
-    def __init__(self, device: Device, sess: tf.Session, train_data, test_data) -> None:
+    def __init__(self, sess: tf.Session, train_data, test_data) -> None:
         """
-        Creates a new ConvNet with device <device>, Session <sess>, training
-        Dataset <train_data>, and testing Dataset <test_data>.
+        Creates a new ConvNet with Session <sess>, training Dataset
+        <train_data>, and testing Dataset <test_data>.
         """
         global num_nets
-        super().__init__(device, sess)
-        with tf.device(self.device):
-            self.num = num_nets
-            num_nets += 1
-            self.step_num = 0
-            self.train_next = train_data\
-                .shuffle(MNIST_TRAIN_SIZE).batch(50).repeat().make_one_shot_iterator().get_next()
-            self.test_iterator = test_data.batch(MNIST_TEST_BATCH_SIZE).make_initializable_iterator()
-            self.test_next = self.test_iterator.get_next()
-            self.x = tf.placeholder(tf.float32, [None, 784])
-            self.y_ = tf.placeholder(tf.int32, [None])
-            one_hot_y_ = tf.one_hot(self.y_, 10)
-            self.keep_prob = FloatHyperparameter('Keep probability', self, False,
-                                                 lambda: random.uniform(0.1, 1), 1.2, 0.1, 1)
-            self.net = MNISTConvNet(self.x, one_hot_y_, self.keep_prob.value)
-            cross_entropy = tf.reduce_mean(
-                tf.nn.softmax_cross_entropy_with_logits_v2(labels=one_hot_y_, logits=self.net.y))
-            self.optimizer = OptimizerHyperparameter(self, cross_entropy)
-            self.vars = [self.net.w_conv1, self.net.b_conv1, self.net.w_conv2, self.net.b_conv2,
-                         self.net.w_fc1, self.net.b_fc1, self.net.w_fc2, self.net.b_fc2]
-            self.accuracy = 0
-            self.update_accuracy = True
-            print('Net', self.num, 'created')
+        super().__init__(sess)
+        self.num = num_nets
+        num_nets += 1
+        self.step_num = 0
+        self.train_next = train_data\
+            .shuffle(MNIST_TRAIN_SIZE).batch(50).repeat().make_one_shot_iterator().get_next()
+        self.test_iterator = test_data.batch(MNIST_TEST_BATCH_SIZE).make_initializable_iterator()
+        self.test_next = self.test_iterator.get_next()
+        self.x = tf.placeholder(tf.float32, [None, 784])
+        self.y_ = tf.placeholder(tf.int32, [None])
+        one_hot_y_ = tf.one_hot(self.y_, 10)
+        self.keep_prob = FloatHyperparameter('Keep probability', self, False,
+                                             lambda: random.uniform(0.1, 1), 1.2, 0.1, 1)
+        self.net = MNISTConvNet(self.x, one_hot_y_, self.keep_prob.value)
+        cross_entropy = tf.reduce_mean(
+            tf.nn.softmax_cross_entropy_with_logits_v2(labels=one_hot_y_, logits=self.net.y))
+        self.optimizer = OptimizerHyperparameter(self, cross_entropy)
+        self.vars = [self.net.w_conv1, self.net.b_conv1, self.net.w_conv2, self.net.b_conv2,
+                     self.net.w_fc1, self.net.b_fc1, self.net.w_fc2, self.net.b_fc2]
+        self.accuracy = 0
+        self.update_accuracy = True
+        print('Net', self.num, 'created')
 
     def initialize_variables(self) -> None:
         super().initialize_variables()
