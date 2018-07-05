@@ -60,35 +60,24 @@ class FloatHyperparameter(Hyperparameter):
         self.value = tf.Variable(self._limited(value_setter()), trainable=False)
 
     def __str__(self) -> str:
-        self.graph.lock.acquire()
-        string = str(self._get_value())
-        self.graph.lock.release()
-        return string
+        return str(self._get_value())
 
     def initialize_variables(self) -> None:
         self.graph.sess.run(self.value.initializer)
 
     def copy(self, hyperparam: 'FloatHyperparameter') -> None:
-        self.graph.lock.acquire()
-        hyperparam.graph.lock.acquire()
         self._set_value(hyperparam._get_value())
-        hyperparam.graph.lock.release()
-        self.graph.lock.release()
 
     def perturb(self) -> None:
-        self.graph.lock.acquire()
         value = self._get_value()
         if random.random() < 0.5:
             value *= self.factor
         else:
             value /= self.factor
         self._set_value(self._limited(value))
-        self.graph.lock.release()
 
     def resample(self) -> None:
-        self.graph.lock.acquire()
         self._set_value(self._limited(self.value_setter()))
-        self.graph.lock.release()
 
 
 class OptimizerInfo:
@@ -155,17 +144,12 @@ class OptimizerHyperparameter(Hyperparameter):
         self._set_sub_hyperparams_unused(False)
 
     def __str__(self) -> str:
-        self.graph.lock.acquire()
-        string = self.opt_info[self.opt_index].optimizer.__class__.__name__
-        self.graph.lock.release()
-        return string
+        return self.opt_info[self.opt_index].optimizer.__class__.__name__
 
     def initialize_variables(self) -> None:
         self.graph.sess.run([var.initializer for info in self.opt_info for var in info.vars])
 
     def copy(self, hyperparam: 'OptimizerHyperparameter') -> None:
-        self.graph.lock.acquire()
-        hyperparam.graph.lock.acquire()
         self._set_sub_hyperparams_unused(True)
         opt_index = hyperparam.opt_index
         self.opt_index = opt_index
@@ -174,8 +158,6 @@ class OptimizerHyperparameter(Hyperparameter):
         for i in range(len(vars)):
             vars[i].load(hyperparam.graph.sess.run(hyperparam_vars[i]), self.graph.sess)
         self._set_sub_hyperparams_unused(False)
-        hyperparam.graph.lock.release()
-        self.graph.lock.release()
 
     def _switch_to_opt(self, opt_index: int):
         self._set_sub_hyperparams_unused(True)
@@ -187,16 +169,12 @@ class OptimizerHyperparameter(Hyperparameter):
             hyperparam.unused = False
 
     def perturb(self) -> None:
-        self.graph.lock.acquire()
         num_opts = len(self.opt_info)
         if num_opts >= 2:
             self._switch_to_opt((self.opt_index + random.randrange(1, num_opts)) % num_opts)
-        self.graph.lock.release()
 
     def resample(self) -> None:
-        self.graph.lock.acquire()
         self._switch_to_opt(random.randrange(len(self.opt_info)))
-        self.graph.lock.release()
 
     def get_current_minimizer(self) -> tf.Operation:
         """
@@ -265,7 +243,6 @@ class ConvNet(HyperparamsGraph):
         """
         Returns this ConvNet's accuracy score on its testing Dataset.
         """
-        self.lock.acquire()
         if self.update_accuracy:
             self.sess.run(self.test_iterator.initializer)
             size_accuracy = 0
@@ -282,27 +259,20 @@ class ConvNet(HyperparamsGraph):
             self.accuracy = size_accuracy / MNIST_TEST_SIZE
             print('Net', self.num, 'step', self.step_num, 'accuracy:', self.accuracy)
             self.update_accuracy = False
-        accuracy = self.accuracy
-        self.lock.release()
-        return accuracy
+        return self.accuracy
 
     def get_metric(self) -> float:
         return self.get_accuracy()
 
     def get_step_num(self) -> int:
-        self.lock.acquire()
-        step_num = self.step_num
-        self.lock.release()
-        return step_num
+        return self.step_num
 
     def _train_step(self) -> None:
-        self.lock.acquire()
         train_images, train_labels = self.sess.run(self.train_next)
         self.sess.run(self.optimizer.get_current_minimizer(),
                       feed_dict={self.x: train_images, self.y_: train_labels})
         self.update_accuracy = True
         self.step_num += 1
-        self.lock.release()
 
     def train(self) -> None:
         print('Net', self.num, 'starting training run at step', self.step_num)
@@ -316,8 +286,6 @@ class ConvNet(HyperparamsGraph):
         Copies the specified ConvNet, randomly changing the copied
         hyperparameters.
         """
-        self.lock.acquire()
-        net.lock.acquire()
         print('Net', self.num, 'copying net', net.num)
         self.step_num = net.step_num
         for i in range(len(self.vars)):
@@ -338,60 +306,31 @@ class ConvNet(HyperparamsGraph):
         self.update_accuracy = True
         self.last_update = net.last_update
         print('Net', self.num, 'finished copying')
-        net.lock.release()
         self.record_update()
-        self.lock.release()
 
     def exploit_and_or_explore(self, population: List['ConvNet']) -> None:
         # Rank population by accuracy
         print('Net', self.num, 'ranking nets')
-        accuracies = {}
-        shuffled_pop = random.sample(population, len(population))
-        for net in shuffled_pop:
-            net.lock.acquire()
-            accuracies[net] = net.get_accuracy()
-        ranked_pop = sorted(population, key=lambda net: accuracies[net])
+        ranked_pop = sorted(population, key=lambda net: net.get_accuracy())
         print('Net', self.num, 'finished ranking')
         if (len(ranked_pop) > 1
                 and ranked_pop.index(self) < math.ceil(0.2 * len(ranked_pop))):  # In the bottom 20%?
             # Copy a net from the top 20%
             net_to_copy = ranked_pop[random.randrange(math.floor(0.8 * len(ranked_pop)), len(ranked_pop))]
-            for net in shuffled_pop:
-                if net is not self and net is not net_to_copy:
-                    net.lock.release()
             self.copy_and_explore(net_to_copy)
-            net_to_copy.lock.release()
-            self.lock.release()
-        else:
-            for net in shuffled_pop:
-                net.lock.release()
 
     @staticmethod
     def population_exploit_explore(population: List['ConvNet']) -> None:
         # Rank population by accuracy
         print('Ranking nets')
-        accuracies = {}
-        shuffled_pop = random.sample(population, len(population))
-        for net in shuffled_pop:
-            net.lock.acquire()
-            accuracies[net] = net.get_accuracy()
-        ranked_pop = sorted(population, key=lambda net: accuracies[net])
+        ranked_pop = sorted(population, key=lambda net: net.get_accuracy())
         print('Finished ranking')
         if len(ranked_pop) > 1:
             # Bottom 20% copies top 20%
-            percentile20 = math.ceil(0.2 * len(ranked_pop))
-            percentile80 = math.floor(0.8 * len(ranked_pop))
-            for net in ranked_pop[percentile20:percentile80]:
-                net.lock.release()
-            worst_nets = ranked_pop[:percentile20]
-            best_nets = ranked_pop[percentile80:]
+            worst_nets = ranked_pop[:math.ceil(0.2 * len(ranked_pop))]
+            best_nets = ranked_pop[math.floor(0.8 * len(ranked_pop)):]
             for i in range(len(worst_nets)):
                 worst_nets[i].copy_and_explore(best_nets[i])
-                worst_nets[i].lock.release()
-                best_nets[i].lock.release()
-        else:
-            for net in shuffled_pop:
-                net.lock.release()
 
 
 RED = '#FF0000'

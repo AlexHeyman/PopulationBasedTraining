@@ -4,7 +4,6 @@ TensorFlow.
 """
 
 from typing import Iterable, List, Callable, TypeVar, Generic
-from threading import RLock
 from collections import OrderedDict
 import tensorflow as tf
 
@@ -17,19 +16,17 @@ class Graph:
 
     A Graph need not have a TensorFlow Graph object all to itself.
 
-    A Graph has an associated TensorFlow Session and an RLock that should
-    be used to prevent multiple threads from interacting with it at once.
+    A Graph has an associated TensorFlow Session that it uses to run its
+    Operations and Variables.
     """
 
     sess: tf.Session
-    lock: RLock
 
     def __init__(self, sess: tf.Session) -> None:
         """
         Creates a new Graph with associated Session <sess>.
         """
         self.sess = sess
-        self.lock = RLock()
 
     def initialize_variables(self) -> None:
         """
@@ -285,22 +282,18 @@ class HyperparamsGraph(Graph):
         Records this HyperparamsGraph's current information as a new update to
         its hyperparameters.
         """
-        self.lock.acquire()
         self.last_update = HyperparamsUpdate(self)
-        self.lock.release()
 
     def get_update_history(self) -> Iterable[HyperparamsUpdate]:
         """
         Returns an iterable of this HyperparamsGraph's HyperparamsUpdates in
         order from least to most recent.
         """
-        self.lock.acquire()
         updates = []
         update = self.last_update
         while update is not None:
             updates.append(update)
             update = update.prev
-        self.lock.release()
         return reversed(updates)
 
     def print_update_history(self) -> None:
@@ -308,7 +301,6 @@ class HyperparamsGraph(Graph):
         Prints this HyperparamsGraph's hyperparameter update history to the
         console.
         """
-        self.lock.acquire()
         updates = []
         update = self.last_update
         while update is not None:
@@ -320,4 +312,3 @@ class HyperparamsGraph(Graph):
             for name, value in update.hyperparams.items():
                 print(name + ': ' + value)
             print()
-        self.lock.release()
