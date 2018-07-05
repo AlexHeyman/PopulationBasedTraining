@@ -2,6 +2,7 @@
 A convolutional neural network for MNIST.
 """
 
+from typing import List
 import tensorflow as tf
 
 
@@ -44,8 +45,12 @@ class ConvNet:
     """
     A convolutional neural network for MNIST with two convolutional layers and
     two fully connected layers.
+
+    A ConvNet has an associated TensorFlow Session that should be used to run
+    and evaluate its graph elements.
     """
 
+    sess: tf.Session
     w_conv1: tf.Variable
     b_conv1: tf.Variable
     w_conv2: tf.Variable
@@ -56,16 +61,18 @@ class ConvNet:
     b_fc2: tf.Variable
     y: tf.Tensor
     accuracy: tf.Tensor
+    vars: List[tf.Variable]
 
-    def __init__(self, x, y_, keep_prob):
+    def __init__(self, sess: tf.Session, x, y_, keep_prob) -> None:
         """
-        Creates a new ConvNet.
+        Creates a new ConvNet with associated Session <sess>.
 
         <x> is the input batch's images, a tf.float32 Tensor with shape [None,
         784]. <y_> is the batch's labels in one-hot vector form, a tf.float32
         Tensor with shape [None, 10]. keep_prob is the dropout keep
         probability, a tf.float32 Tensor with shape [].
         """
+        self.sess = sess
 
         self.w_conv1 = weight_variable([5, 5, 1, 32])
         self.b_conv1 = bias_variable([32])
@@ -95,3 +102,13 @@ class ConvNet:
         correct_prediction = tf.equal(
             tf.argmax(self.y, 1), tf.argmax(y_, 1))
         self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+
+        self.vars = [self.w_conv1, self.b_conv1, self.w_conv2, self.b_conv2,
+                     self.w_fc1, self.b_fc1, self.w_fc2, self.b_fc2]
+
+    def initialize_variables(self) -> None:
+        """
+        Runs the initializer Operations of all of the TensorFlow Variables that
+        this ConvNet created in its initializer.
+        """
+        self.sess.run([var.initializer for var in self.vars])

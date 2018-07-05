@@ -16,8 +16,8 @@ class Graph:
 
     A Graph need not have a TensorFlow Graph object all to itself.
 
-    A Graph has an associated TensorFlow Session that it uses to run its
-    Operations and Variables.
+    A Graph has an associated TensorFlow Session that should be used to run and
+    evaluate its graph elements.
     """
 
     sess: tf.Session
@@ -82,9 +82,7 @@ class Cluster(Generic[T]):
 
     Any TensorFlow Variables created in the initializers of a Cluster's
     Graphs should be initialized by calling the Cluster's
-    initialize_variables() method. Even if such variables are global, they may
-    not be on the proper device to be initialized if a Session is instructed
-    to initialize all global variables.
+    initialize_variables() method.
 
     T is the type of Graph that this Cluster trains.
     """

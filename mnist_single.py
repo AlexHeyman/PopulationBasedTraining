@@ -17,22 +17,26 @@ if __name__ == '__main__':
     test_iterator = test_data.batch(MNIST_TEST_BATCH_SIZE).make_initializable_iterator()
     test_next = test_iterator.get_next()
 
+    sess = tf.Session()
+
     x = tf.placeholder(tf.float32, [None, 784])
     y_ = tf.placeholder(tf.int32, [None])
     one_hot_y_ = tf.one_hot(y_, 10)
     keep_prob = tf.placeholder(tf.float32)
 
-    net = ConvNet(x, one_hot_y_, keep_prob)
+    net = ConvNet(sess, x, one_hot_y_, keep_prob)
     cross_entropy = tf.reduce_mean(
         tf.nn.softmax_cross_entropy_with_logits_v2(labels=one_hot_y_, logits=net.y))
-    train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
+    optimizer = tf.train.AdamOptimizer(1e-4)
+    train_step = optimizer.minimize(cross_entropy)
 
-    sess = tf.Session()
-    sess.run(tf.global_variables_initializer())
+    net.initialize_variables()
+    sess.run([var.initializer for var in optimizer.variables()])
+
     training_start = None
     training_time = datetime.timedelta()
 
-    def print_stats():
+    def print_stats() -> None:
         """
         Calculates and prints the net's total training time and accuracy.
         """

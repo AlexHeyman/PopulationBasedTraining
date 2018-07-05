@@ -195,7 +195,6 @@ class ConvNet(HyperparamsGraph):
     """
 
     num: int
-    vars: List[tf.Variable]
     step_num: int
     train_next: Any
     test_next: Any
@@ -224,19 +223,17 @@ class ConvNet(HyperparamsGraph):
         one_hot_y_ = tf.one_hot(self.y_, 10)
         self.keep_prob = FloatHyperparameter('Keep probability', self, False,
                                              lambda: random.uniform(0.1, 1), 1.2, 0.1, 1)
-        self.net = MNISTConvNet(self.x, one_hot_y_, self.keep_prob.value)
+        self.net = MNISTConvNet(sess, self.x, one_hot_y_, self.keep_prob.value)
         cross_entropy = tf.reduce_mean(
             tf.nn.softmax_cross_entropy_with_logits_v2(labels=one_hot_y_, logits=self.net.y))
         self.optimizer = OptimizerHyperparameter(self, cross_entropy)
-        self.vars = [self.net.w_conv1, self.net.b_conv1, self.net.w_conv2, self.net.b_conv2,
-                     self.net.w_fc1, self.net.b_fc1, self.net.w_fc2, self.net.b_fc2]
         self.accuracy = 0
         self.update_accuracy = True
         print('Net', self.num, 'created')
 
     def initialize_variables(self) -> None:
         super().initialize_variables()
-        self.sess.run([var.initializer for var in self.vars])
+        self.net.initialize_variables()
         print('Net', self.num, 'variables initialized')
 
     def get_accuracy(self) -> float:
@@ -288,8 +285,8 @@ class ConvNet(HyperparamsGraph):
         """
         print('Net', self.num, 'copying net', net.num)
         self.step_num = net.step_num
-        for i in range(len(self.vars)):
-            self.vars[i].load(net.sess.run(net.vars[i]), self.sess)
+        for i in range(len(self.net.vars)):
+            self.net.vars[i].load(net.sess.run(net.net.vars[i]), self.sess)
         for i in range(len(self.hyperparams)):
             self.hyperparams[i].copy(net.hyperparams[i])
         # Ensure that at least one used hyperparameter is perturbed
