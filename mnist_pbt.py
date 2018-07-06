@@ -150,11 +150,10 @@ class OptimizerHyperparameter(Hyperparameter):
         return (self.opt_index, self.graph.sess.run(self.opt_info[self.opt_index].vars))
 
     def set_value(self, value) -> None:
+        opt_index, var_values = value
         self._set_sub_hyperparams_unused(True)
-        opt_index = value[0]
         self.opt_index = opt_index
         vars = self.opt_info[opt_index].vars
-        var_values = value[1]
         for i in range(len(vars)):
             vars[i].load(var_values[i], self.graph.sess)
         self._set_sub_hyperparams_unused(False)
@@ -225,6 +224,20 @@ class ConvNet(HyperparamsGraph):
         super().initialize_variables()
         self.net.initialize_variables()
 
+    def get_value(self):
+        return (self.step_num, self.sess.run(self.net.vars),
+                [hyperparam.get_value() for hyperparam in self.hyperparams], self.last_update)
+
+    def set_value(self, value) -> None:
+        step_num, var_values, hyperparam_values, last_update = value
+        self.step_num = step_num
+        for i in range(len(self.net.vars)):
+            self.net.vars[i].load(var_values[i], self.sess)
+        for i in range(len(self.hyperparams)):
+            self.hyperparams[i].set_value(hyperparam_values[i])
+        self.last_update = last_update
+        self.update_accuracy = True
+
     def get_accuracy(self) -> float:
         """
         Returns this ConvNet's accuracy score on its testing Dataset.
@@ -266,11 +279,7 @@ class ConvNet(HyperparamsGraph):
         Copies the specified ConvNet, randomly changing the copied
         hyperparameters.
         """
-        self.step_num = graph.step_num
-        for i in range(len(self.net.vars)):
-            self.net.vars[i].load(graph.sess.run(graph.net.vars[i]), self.sess)
-        for i in range(len(self.hyperparams)):
-            self.hyperparams[i].set_value(graph.hyperparams[i].get_value())
+        self.set_value(graph.get_value())
         # Ensure that at least one used hyperparameter is perturbed
         rand = random.randrange(1, 2 ** sum(1 for hyperparam in self.hyperparams if not hyperparam.unused))
         perturbed_used_hyperparam = False
@@ -282,8 +291,6 @@ class ConvNet(HyperparamsGraph):
             elif rand & (2 ** i) != 0:
                 hyperparam.perturb()
                 perturbed_used_hyperparam = True
-        self.update_accuracy = True
-        self.last_update = graph.last_update
         self.record_update()
 
     def exploit_and_or_explore(self, population: List['ConvNet']) -> None:

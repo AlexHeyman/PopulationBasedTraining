@@ -41,6 +41,21 @@ class Graph:
         """
         raise NotImplementedError
 
+    def get_value(self):
+        """
+        Returns a data structure that represents this Graph's value -
+        everything that distinguishes it from other Graphs of its type.
+        """
+        raise NotImplementedError
+
+    def set_value(self, value) -> None:
+        """
+        Sets this Graph's value to that represented by <value>, a data
+        structure returned by the get_value() method of a Graph of this one's
+        type.
+        """
+        raise NotImplementedError
+
     def get_metric(self) -> float:
         """
         Returns a metric for this Graph, typically its accuracy, that
