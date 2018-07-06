@@ -43,7 +43,7 @@ class Graph:
 
     def get_value(self):
         """
-        Returns a data structure that represents this Graph's value -
+        Returns a picklable data structure that represents this Graph's value -
         everything that distinguishes it from other Graphs of its type.
         """
         raise NotImplementedError
@@ -235,7 +235,8 @@ class Hyperparameter:
 
     def get_value(self):
         """
-        Returns a data structure that represents this Hyperparameter's value.
+        Returns a picklable data structure that represents this
+        Hyperparameter's value.
         """
         raise NotImplementedError
 
