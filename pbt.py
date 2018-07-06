@@ -20,12 +20,15 @@ class Graph:
     evaluate its graph elements.
     """
 
+    num: int
     sess: tf.Session
 
-    def __init__(self, sess: tf.Session) -> None:
+    def __init__(self, num: int, sess: tf.Session) -> None:
         """
-        Creates a new Graph with associated Session <sess>.
+        Creates a new Graph, numbered <num> in its population, with associated
+        Session <sess>.
         """
+        self.num = num
         self.sess = sess
 
     def initialize_variables(self) -> None:
@@ -127,17 +130,20 @@ class LocalCluster(Generic[T], Cluster[T]):
     sess: tf.Session
     population: List[T]
 
-    def __init__(self, pop_size: int, graph_maker: Callable[[tf.Session], T]) -> None:
+    def __init__(self, pop_size: int, graph_maker: Callable[[int, tf.Session], T]) -> None:
         """
         Creates a new LocalCluster with <pop_size> graphs returned by
         <graph_maker> as its population.
 
         <pop_size> is the number of Graphs that will make up this
         LocalCluster's population. <graph_maker> is a Callable that returns a
-        new T with the specified Session each time it is called.
+        new T with the specified number and Session each time it is called.
         """
         self.sess = tf.Session()
-        self.population = [graph_maker(self.sess) for _ in range(pop_size)]
+        self.population = []
+        for i in range(pop_size):
+            self.population.append(graph_maker(i, self.sess))
+            print('Graph', i, 'created')
 
     def get_population(self) -> List[T]:
         return self.population
@@ -145,6 +151,7 @@ class LocalCluster(Generic[T], Cluster[T]):
     def initialize_variables(self):
         for graph in self.population:
             graph.initialize_variables()
+            print('Graph', graph.num, 'variables initialized')
 
     def get_highest_metric_graph(self) -> T:
         highest_graph = None
@@ -166,11 +173,15 @@ class LocalCluster(Generic[T], Cluster[T]):
             for graph in self.population:
                 if training_cond(graph, self.population):
                     keep_training = True
+                    print('Graph', graph.num, 'starting training run at step', graph.get_step_num())
                     graph.train()
+                    print('Graph', graph.num, 'ending training run at step', graph.get_step_num())
             if keep_training:
                 for graph in self.population:
                     if training_cond(graph, self.population):
+                        print('Exploiting/exploring')
                         graph.population_exploit_explore(self.population)
+                        print('Finished exploiting/exploring')
                         break
                 else:
                     break
@@ -262,11 +273,12 @@ class HyperparamsGraph(Graph):
     hyperparams: List[Hyperparameter]
     last_update: HyperparamsUpdate
 
-    def __init__(self, sess: tf.Session) -> None:
+    def __init__(self, num: int, sess: tf.Session) -> None:
         """
-        Creates a new HyperparamsGraph with associated Session <sess>.
+        Creates a new HyperparamsGraph, numbered <num> in its population, with
+        associated Session <sess>.
         """
-        super().__init__(sess)
+        super().__init__(num, sess)
         self.hyperparams = []
         self.last_update = None
 

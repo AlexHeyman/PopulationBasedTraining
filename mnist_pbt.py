@@ -184,9 +184,6 @@ class OptimizerHyperparameter(Hyperparameter):
         return self.opt_info[self.opt_index].minimizer
 
 
-num_nets = 0
-
-
 class ConvNet(HyperparamsGraph):
     """
     A PBT-compatible version of an MNIST convnet that trains itself to minimize
@@ -194,7 +191,6 @@ class ConvNet(HyperparamsGraph):
     keep probability.
     """
 
-    num: int
     step_num: int
     train_next: Any
     test_next: Any
@@ -204,15 +200,12 @@ class ConvNet(HyperparamsGraph):
     accuracy: float
     update_accuracy: bool
 
-    def __init__(self, sess: tf.Session, train_data, test_data) -> None:
+    def __init__(self, num: int, sess: tf.Session, train_data, test_data) -> None:
         """
-        Creates a new ConvNet with Session <sess>, training Dataset
-        <train_data>, and testing Dataset <test_data>.
+        Creates a new ConvNet, numbered <num> in its population, with Session
+        <sess>, training Dataset <train_data>, and testing Dataset <test_data>.
         """
-        global num_nets
-        super().__init__(sess)
-        self.num = num_nets
-        num_nets += 1
+        super().__init__(num, sess)
         self.step_num = 0
         self.train_next = train_data\
             .shuffle(MNIST_TRAIN_SIZE).batch(50).repeat().make_one_shot_iterator().get_next()
@@ -229,12 +222,10 @@ class ConvNet(HyperparamsGraph):
         self.optimizer = OptimizerHyperparameter(self, cross_entropy)
         self.accuracy = 0
         self.update_accuracy = True
-        print('Net', self.num, 'created')
 
     def initialize_variables(self) -> None:
         super().initialize_variables()
         self.net.initialize_variables()
-        print('Net', self.num, 'variables initialized')
 
     def get_accuracy(self) -> float:
         """
@@ -254,7 +245,6 @@ class ConvNet(HyperparamsGraph):
             except tf.errors.OutOfRangeError:
                 pass
             self.accuracy = size_accuracy / MNIST_TEST_SIZE
-            print('Net', self.num, 'step', self.step_num, 'accuracy:', self.accuracy)
             self.update_accuracy = False
         return self.accuracy
 
@@ -272,23 +262,20 @@ class ConvNet(HyperparamsGraph):
         self.step_num += 1
 
     def train(self) -> None:
-        print('Net', self.num, 'starting training run at step', self.step_num)
         self._train_step()
         while self.step_num % 500 != 0:
             self._train_step()
-        print('Net', self.num, 'ending training run at step', self.step_num)
 
-    def copy_and_explore(self, net: 'ConvNet'):
+    def copy_and_explore(self, graph: 'ConvNet'):
         """
         Copies the specified ConvNet, randomly changing the copied
         hyperparameters.
         """
-        print('Net', self.num, 'copying net', net.num)
-        self.step_num = net.step_num
+        self.step_num = graph.step_num
         for i in range(len(self.net.vars)):
-            self.net.vars[i].load(net.sess.run(net.net.vars[i]), self.sess)
+            self.net.vars[i].load(graph.sess.run(graph.net.vars[i]), self.sess)
         for i in range(len(self.hyperparams)):
-            self.hyperparams[i].copy(net.hyperparams[i])
+            self.hyperparams[i].copy(graph.hyperparams[i])
         # Ensure that at least one used hyperparameter is perturbed
         rand = random.randrange(1, 2 ** sum(1 for hyperparam in self.hyperparams if not hyperparam.unused))
         perturbed_used_hyperparam = False
@@ -301,33 +288,28 @@ class ConvNet(HyperparamsGraph):
                 hyperparam.perturb()
                 perturbed_used_hyperparam = True
         self.update_accuracy = True
-        self.last_update = net.last_update
-        print('Net', self.num, 'finished copying')
+        self.last_update = graph.last_update
         self.record_update()
 
     def exploit_and_or_explore(self, population: List['ConvNet']) -> None:
         # Rank population by accuracy
-        print('Net', self.num, 'ranking nets')
-        ranked_pop = sorted(population, key=lambda net: net.get_accuracy())
-        print('Net', self.num, 'finished ranking')
+        ranked_pop = sorted(population, key=lambda graph: graph.get_accuracy())
         if (len(ranked_pop) > 1
                 and ranked_pop.index(self) < math.ceil(0.2 * len(ranked_pop))):  # In the bottom 20%?
-            # Copy a net from the top 20%
-            net_to_copy = ranked_pop[random.randrange(math.floor(0.8 * len(ranked_pop)), len(ranked_pop))]
-            self.copy_and_explore(net_to_copy)
+            # Copy a graph from the top 20%
+            graph_to_copy = ranked_pop[random.randrange(math.floor(0.8 * len(ranked_pop)), len(ranked_pop))]
+            self.copy_and_explore(graph_to_copy)
 
     @staticmethod
     def population_exploit_explore(population: List['ConvNet']) -> None:
         # Rank population by accuracy
-        print('Ranking nets')
-        ranked_pop = sorted(population, key=lambda net: net.get_accuracy())
-        print('Finished ranking')
+        ranked_pop = sorted(population, key=lambda graph: graph.get_accuracy())
         if len(ranked_pop) > 1:
             # Bottom 20% copies top 20%
-            worst_nets = ranked_pop[:math.ceil(0.2 * len(ranked_pop))]
-            best_nets = ranked_pop[math.floor(0.8 * len(ranked_pop)):]
-            for i in range(len(worst_nets)):
-                worst_nets[i].copy_and_explore(best_nets[i])
+            worst_graphs = ranked_pop[:math.ceil(0.2 * len(ranked_pop))]
+            best_graphs = ranked_pop[math.floor(0.8 * len(ranked_pop)):]
+            for i in range(len(worst_graphs)):
+                worst_graphs[i].copy_and_explore(best_graphs[i])
 
 
 RED = '#FF0000'
@@ -346,8 +328,8 @@ _NO_DATA = []
 OPT_LINES = [Line2D(_NO_DATA, _NO_DATA, color=OPT_COLORS[opt]) for opt in OPTS]
 
 
-def _plot_net_hyperparams(net: ConvNet, max_step_num: int,
-                          kp_ax: Axes, opt_ax: Axes, mom_ax: Axes, best: bool) -> None:
+def _plot_graph_hyperparams(graph: ConvNet, max_step_num: int,
+                            kp_ax: Axes, opt_ax: Axes, mom_ax: Axes, best: bool) -> None:
     if best:
         colormap = IDENTITY
         zorder = 1
@@ -364,7 +346,7 @@ def _plot_net_hyperparams(net: ConvNet, max_step_num: int,
     # Momentum data since the optimizer last became MomentumOptimizer
     mom_step_nums = []
     moms = []
-    for update in net.get_update_history():
+    for update in graph.get_update_history():
         new_opt = update.hyperparams['Optimizer']
         if new_opt != current_opt:
             if current_opt is not None:
@@ -417,8 +399,8 @@ def plot_hyperparams(cluster: Cluster[ConvNet], directory: str) -> None:
 
     <directory> will be created if it does not already exist.
     """
-    ranked_pop = sorted(cluster.get_population(), key=lambda net: -net.get_accuracy())
-    max_step_num = max(net.step_num for net in ranked_pop)
+    ranked_pop = sorted(cluster.get_population(), key=lambda graph: -graph.get_accuracy())
+    max_step_num = max(graph.step_num for graph in ranked_pop)
     # Keep probability plot
     kp_fig, kp_ax = plt.subplots()
     kp_ax.set(title='Dropout keep probability', xlabel='Step', ylabel='Keep probability')
@@ -436,9 +418,9 @@ def plot_hyperparams(cluster: Cluster[ConvNet], directory: str) -> None:
     mom_ax.set_xlim(0, max_step_num)
     mom_ax.set_ylim(-0.01, 1.01)
     # Add data to plots
-    _plot_net_hyperparams(ranked_pop[0], max_step_num, kp_ax, opt_ax, mom_ax, True)
+    _plot_graph_hyperparams(ranked_pop[0], max_step_num, kp_ax, opt_ax, mom_ax, True)
     for i in range(1, len(ranked_pop)):
-        _plot_net_hyperparams(ranked_pop[i], max_step_num, kp_ax, opt_ax, mom_ax, False)
+        _plot_graph_hyperparams(ranked_pop[i], max_step_num, kp_ax, opt_ax, mom_ax, False)
     # Save plots
     if not os.path.exists(directory):
         os.makedirs(directory)

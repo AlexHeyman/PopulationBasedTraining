@@ -14,19 +14,17 @@ if __name__ == '__main__':
     test_data = test('MNIST_data/')
     pop_size = 50
     cluster = LocalCluster[ConvNet](pop_size,
-                                    lambda sess: ConvNet(sess, train_data, test_data))
+                                    lambda num, sess: ConvNet(num, sess, train_data, test_data))
     cluster.initialize_variables()
-    for net in cluster.get_population():
-        net.get_accuracy()
     training_start = datetime.datetime.now()
-    cluster.train(lambda net, population: net.step_num < 20000)
+    cluster.train(lambda graph, population: graph.step_num < 20000)
     print('Training time:', datetime.datetime.now() - training_start)
-    ranked_pop = sorted(cluster.get_population(), key=lambda net: -net.get_accuracy())
+    ranked_pop = sorted(cluster.get_population(), key=lambda graph: -graph.get_accuracy())
     print()
-    for net in ranked_pop:
-        print('Net', net.num)
-        print('Accuracy:', net.get_accuracy())
+    for graph in ranked_pop:
+        print('Graph', graph.num)
+        print('Accuracy:', graph.get_accuracy())
         print('Hyperparameter update history:')
         print()
-        net.print_update_history()
+        graph.print_update_history()
     plot_hyperparams(cluster, 'plots/')
