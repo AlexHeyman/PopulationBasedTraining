@@ -16,12 +16,14 @@ class Graph:
 
     A Graph need not have a TensorFlow Graph object all to itself.
 
-    A Graph has an associated TensorFlow Session that should be used to run and
-    evaluate its graph elements.
+    A Graph has an associated TensorFlow Session that is used to run and
+    evaluate its graph elements. It also has a step number that records the
+    number of training steps that it has performed.
     """
 
     num: int
     sess: tf.Session
+    step_num: int
 
     def __init__(self, num: int, sess: tf.Session) -> None:
         """
@@ -30,6 +32,7 @@ class Graph:
         """
         self.num = num
         self.sess = sess
+        self.step_num = 0
 
     def initialize_variables(self) -> None:
         """
@@ -43,12 +46,6 @@ class Graph:
         Returns a metric for this Graph, typically its accuracy, that
         represents its effectiveness at its task and allows it to be compared
         to other Graphs with the same task.
-        """
-        raise NotImplementedError
-
-    def get_step_num(self) -> int:
-        """
-        Returns the number of training steps that this Graph has performed.
         """
         raise NotImplementedError
 
@@ -173,9 +170,9 @@ class LocalCluster(Generic[T], Cluster[T]):
             for graph in self.population:
                 if training_cond(graph, self.population):
                     keep_training = True
-                    print('Graph', graph.num, 'starting training run at step', graph.get_step_num())
+                    print('Graph', graph.num, 'starting training run at step', graph.step_num)
                     graph.train()
-                    print('Graph', graph.num, 'ending training run at step', graph.get_step_num())
+                    print('Graph', graph.num, 'ending training run at step', graph.step_num)
             if keep_training:
                 for graph in self.population:
                     if training_cond(graph, self.population):
@@ -265,7 +262,7 @@ class HyperparamsUpdate:
         information.
         """
         self.prev = graph.last_update
-        self.step_num = graph.get_step_num()
+        self.step_num = graph.step_num
         self.hyperparams = OrderedDict()
         for hyperparam in graph.hyperparams:
             if not hyperparam.unused:

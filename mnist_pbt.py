@@ -191,7 +191,6 @@ class ConvNet(HyperparamsGraph):
     keep probability.
     """
 
-    step_num: int
     train_next: Any
     test_next: Any
     net: MNISTConvNet
@@ -206,7 +205,6 @@ class ConvNet(HyperparamsGraph):
         <sess>, training Dataset <train_data>, and testing Dataset <test_data>.
         """
         super().__init__(num, sess)
-        self.step_num = 0
         self.train_next = train_data\
             .shuffle(MNIST_TRAIN_SIZE).batch(50).repeat().make_one_shot_iterator().get_next()
         self.test_iterator = test_data.batch(MNIST_TEST_BATCH_SIZE).make_initializable_iterator()
@@ -250,9 +248,6 @@ class ConvNet(HyperparamsGraph):
 
     def get_metric(self) -> float:
         return self.get_accuracy()
-
-    def get_step_num(self) -> int:
-        return self.step_num
 
     def _train_step(self) -> None:
         train_images, train_labels = self.sess.run(self.train_next)
