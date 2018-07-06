@@ -33,12 +33,6 @@ class FloatHyperparameter(Hyperparameter):
             value = min(value, self.max_value)
         return value
 
-    def _get_value(self) -> float:
-        return self.graph.sess.run(self.value)
-
-    def _set_value(self, value: float) -> None:
-        self.value.load(value, self.graph.sess)
-
     def __init__(self, name: str, graph: HyperparamsGraph, unused: bool,
                  value_setter: Callable[[], float], factor: float,
                  min_value: float, max_value: float) -> None:
@@ -60,24 +54,27 @@ class FloatHyperparameter(Hyperparameter):
         self.value = tf.Variable(self._limited(value_setter()), trainable=False)
 
     def __str__(self) -> str:
-        return str(self._get_value())
+        return str(self.get_value())
 
     def initialize_variables(self) -> None:
         self.graph.sess.run(self.value.initializer)
 
-    def copy(self, hyperparam: 'FloatHyperparameter') -> None:
-        self._set_value(hyperparam._get_value())
+    def get_value(self) -> float:
+        return self.graph.sess.run(self.value)
+
+    def set_value(self, value: float) -> None:
+        self.value.load(value, self.graph.sess)
 
     def perturb(self) -> None:
-        value = self._get_value()
+        value = self.get_value()
         if random.random() < 0.5:
             value *= self.factor
         else:
             value /= self.factor
-        self._set_value(self._limited(value))
+        self.set_value(self._limited(value))
 
     def resample(self) -> None:
-        self._set_value(self._limited(self.value_setter()))
+        self.set_value(self._limited(self.value_setter()))
 
 
 class OptimizerInfo:
@@ -149,14 +146,17 @@ class OptimizerHyperparameter(Hyperparameter):
     def initialize_variables(self) -> None:
         self.graph.sess.run([var.initializer for info in self.opt_info for var in info.vars])
 
-    def copy(self, hyperparam: 'OptimizerHyperparameter') -> None:
+    def get_value(self):
+        return (self.opt_index, self.graph.sess.run(self.opt_info[self.opt_index].vars))
+
+    def set_value(self, value) -> None:
         self._set_sub_hyperparams_unused(True)
-        opt_index = hyperparam.opt_index
+        opt_index = value[0]
         self.opt_index = opt_index
         vars = self.opt_info[opt_index].vars
-        hyperparam_vars = hyperparam.opt_info[opt_index].vars
+        var_values = value[1]
         for i in range(len(vars)):
-            vars[i].load(hyperparam.graph.sess.run(hyperparam_vars[i]), self.graph.sess)
+            vars[i].load(var_values[i], self.graph.sess)
         self._set_sub_hyperparams_unused(False)
 
     def _switch_to_opt(self, opt_index: int):
@@ -275,7 +275,7 @@ class ConvNet(HyperparamsGraph):
         for i in range(len(self.net.vars)):
             self.net.vars[i].load(graph.sess.run(graph.net.vars[i]), self.sess)
         for i in range(len(self.hyperparams)):
-            self.hyperparams[i].copy(graph.hyperparams[i])
+            self.hyperparams[i].set_value(graph.hyperparams[i].get_value())
         # Ensure that at least one used hyperparameter is perturbed
         rand = random.randrange(1, 2 ** sum(1 for hyperparam in self.hyperparams if not hyperparam.unused))
         perturbed_used_hyperparam = False

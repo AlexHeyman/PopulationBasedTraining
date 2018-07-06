@@ -221,10 +221,17 @@ class Hyperparameter:
         """
         raise NotImplementedError
 
-    def copy(self, hyperparam: 'Hyperparameter') -> None:
+    def get_value(self):
         """
-        Sets this Hyperparameter's value to that of <hyperparam>, a
-        Hyperparameter of the same type.
+        Returns a data structure that represents this Hyperparameter's value.
+        """
+        raise NotImplementedError
+
+    def set_value(self, value) -> None:
+        """
+        Sets this Hyperparameter's value to that represented by <value>, a data
+        structure returned by the get_value() method of a Hyperparameter of
+        this one's type.
         """
         raise NotImplementedError
 
