@@ -124,13 +124,10 @@ class Cluster(Generic[T]):
         """
         raise NotImplementedError
 
-    def train(self, training_cond: Callable[[T, List[T]], bool]) -> None:
+    def train(self, until_step_num: int) -> None:
         """
-        Performs population-based training on this Cluster's population.
-
-        <training_cond> is a Callable that, when passed a Graph and this
-        Cluster's population, returns whether the training of the specified
-        Graph should continue.
+        Performs population-based training on this Cluster's population until
+        all of them have performed at least <until_step_num> training steps.
         """
         raise NotImplementedError
 
@@ -180,24 +177,23 @@ class LocalCluster(Generic[T], Cluster[T]):
                     highest_metric = metric
         return highest_graph
 
-    def train(self, training_cond: Callable[[T, List[T]], bool]) -> None:
+    def train(self, until_step_num: int) -> None:
         while True:
             keep_training = False
             for graph in self.population:
-                if training_cond(graph, self.population):
+                if graph.step_num < until_step_num:
                     keep_training = True
-                    print('Graph', graph.num, 'starting training run at step', graph.step_num)
-                    graph.train()
-                    print('Graph', graph.num, 'ending training run at step', graph.step_num)
-            if keep_training:
-                for graph in self.population:
-                    if training_cond(graph, self.population):
+                    if graph.step_num > 0:
                         print('Exploiting/exploring')
                         graph.population_exploit_explore(self.population)
                         print('Finished exploiting/exploring')
-                        break
-                else:
                     break
+            if keep_training:
+                for graph in self.population:
+                    if graph.step_num < until_step_num:
+                        print('Graph', graph.num, 'starting training run at step', graph.step_num)
+                        graph.train()
+                        print('Graph', graph.num, 'ending training run at step', graph.step_num)
             else:
                 break
 
