@@ -196,7 +196,6 @@ class ConvNet(HyperparamsGraph):
     optimizer: OptimizerHyperparameter
     keep_prob: FloatHyperparameter
     accuracy: float
-    update_accuracy: bool
 
     def __init__(self, num: int, sess: tf.Session, train_data, test_data) -> None:
         """
@@ -217,8 +216,7 @@ class ConvNet(HyperparamsGraph):
         cross_entropy = tf.reduce_mean(
             tf.nn.softmax_cross_entropy_with_logits_v2(labels=one_hot_y_, logits=self.net.y))
         self.optimizer = OptimizerHyperparameter(self, cross_entropy)
-        self.accuracy = 0
-        self.update_accuracy = True
+        self.accuracy = None
 
     def initialize_variables(self) -> None:
         super().initialize_variables()
@@ -226,23 +224,24 @@ class ConvNet(HyperparamsGraph):
 
     def get_value(self):
         return (self.step_num, self.sess.run(self.net.vars),
-                [hyperparam.get_value() for hyperparam in self.hyperparams], self.last_update)
+                [hyperparam.get_value() for hyperparam in self.hyperparams],
+                self.last_update, self.accuracy)
 
     def set_value(self, value) -> None:
-        step_num, var_values, hyperparam_values, last_update = value
+        step_num, var_values, hyperparam_values, last_update, accuracy = value
         self.step_num = step_num
         for i in range(len(self.net.vars)):
             self.net.vars[i].load(var_values[i], self.sess)
         for i in range(len(self.hyperparams)):
             self.hyperparams[i].set_value(hyperparam_values[i])
         self.last_update = last_update
-        self.update_accuracy = True
+        self.accuracy = accuracy
 
     def get_accuracy(self) -> float:
         """
         Returns this ConvNet's accuracy score on its testing Dataset.
         """
-        if self.update_accuracy:
+        if self.accuracy is None:
             self.sess.run(self.test_iterator.initializer)
             size_accuracy = 0
             try:
@@ -256,7 +255,6 @@ class ConvNet(HyperparamsGraph):
             except tf.errors.OutOfRangeError:
                 pass
             self.accuracy = size_accuracy / MNIST_TEST_SIZE
-            self.update_accuracy = False
         return self.accuracy
 
     def get_metric(self) -> float:
@@ -266,13 +264,14 @@ class ConvNet(HyperparamsGraph):
         train_images, train_labels = self.sess.run(self.train_next)
         self.sess.run(self.optimizer.get_current_minimizer(),
                       feed_dict={self.x: train_images, self.y_: train_labels})
-        self.update_accuracy = True
+        self.accuracy = None
         self.step_num += 1
 
     def train(self) -> None:
-        self._train_step()
-        while self.step_num % 500 != 0:
+        while True:
             self._train_step()
+            if self.step_num % 500 == 0:
+                break
 
     def copy_and_explore(self, graph: 'ConvNet'):
         """
