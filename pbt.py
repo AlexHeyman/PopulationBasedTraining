@@ -44,7 +44,8 @@ class Graph:
     def get_value(self):
         """
         Returns a picklable data structure that represents this Graph's value -
-        everything that distinguishes it from other Graphs of its type.
+        all of the attributes relevant to its training that vary across Graphs
+        of its type.
         """
         raise NotImplementedError
 
