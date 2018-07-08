@@ -11,7 +11,7 @@ from matplotlib.axes import Axes
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from pbt import Cluster, Hyperparameter, HyperparamsGraph
+from pbt import LocalCluster as PBTLocalCluster, Hyperparameter, HyperparamsUpdate, HyperparamsGraph
 from mnist_convnet import ConvNet as MNISTConvNet, MNIST_TRAIN_SIZE, MNIST_TEST_SIZE, MNIST_TEST_BATCH_SIZE
 
 
@@ -292,26 +292,6 @@ class ConvNet(HyperparamsGraph):
                 perturbed_used_hyperparam = True
         self.record_update()
 
-    def exploit_and_or_explore(self, population: List['ConvNet']) -> None:
-        # Rank population by accuracy
-        ranked_pop = sorted(population, key=lambda graph: graph.get_accuracy())
-        if (len(ranked_pop) > 1
-                and ranked_pop.index(self) < math.ceil(0.2 * len(ranked_pop))):  # In the bottom 20%?
-            # Copy a graph from the top 20%
-            graph_to_copy = ranked_pop[random.randrange(math.floor(0.8 * len(ranked_pop)), len(ranked_pop))]
-            self.copy_and_explore(graph_to_copy)
-
-    @staticmethod
-    def population_exploit_explore(population: List['ConvNet']) -> None:
-        # Rank population by accuracy
-        ranked_pop = sorted(population, key=lambda graph: graph.get_accuracy())
-        if len(ranked_pop) > 1:
-            # Bottom 20% copies top 20%
-            worst_graphs = ranked_pop[:math.ceil(0.2 * len(ranked_pop))]
-            best_graphs = ranked_pop[math.floor(0.8 * len(ranked_pop)):]
-            for i in range(len(worst_graphs)):
-                worst_graphs[i].copy_and_explore(best_graphs[i])
-
 
 RED = '#FF0000'
 ORANGE = '#FF8000'
@@ -329,8 +309,8 @@ _NO_DATA = []
 OPT_LINES = [Line2D(_NO_DATA, _NO_DATA, color=OPT_COLORS[opt]) for opt in OPTS]
 
 
-def _plot_graph_hyperparams(graph: ConvNet, max_step_num: int,
-                            kp_ax: Axes, opt_ax: Axes, mom_ax: Axes, best: bool) -> None:
+def _plot_history_hyperparams(update_history: List[HyperparamsUpdate], max_step_num: int,
+                              kp_ax: Axes, opt_ax: Axes, mom_ax: Axes, best: bool) -> None:
     if best:
         colormap = IDENTITY
         zorder = 1
@@ -347,7 +327,7 @@ def _plot_graph_hyperparams(graph: ConvNet, max_step_num: int,
     # Momentum data since the optimizer last became MomentumOptimizer
     mom_step_nums = []
     moms = []
-    for update in graph.get_update_history():
+    for update in update_history:
         new_opt = update.hyperparams['Optimizer']
         if new_opt != current_opt:
             if current_opt is not None:
@@ -393,15 +373,8 @@ def _plot_graph_hyperparams(graph: ConvNet, max_step_num: int,
         mom_ax.step(mom_step_nums, moms, colormap[BLUE], where='post', zorder=zorder)
 
 
-def plot_hyperparams(cluster: Cluster[ConvNet], directory: str) -> None:
-    """
-    Creates step plots of the hyperparameter update histories of <cluster>'s
-    population and saves them as images in <directory>.
-
-    <directory> will be created if it does not already exist.
-    """
-    ranked_pop = sorted(cluster.get_population(), key=lambda graph: -graph.get_accuracy())
-    max_step_num = max(graph.step_num for graph in ranked_pop)
+def _plot_hyperparams(ranked_histories: List[List[HyperparamsUpdate]],
+                      max_step_num: int, directory: str) -> None:
     # Keep probability plot
     kp_fig, kp_ax = plt.subplots()
     kp_ax.set(title='Dropout keep probability', xlabel='Step', ylabel='Keep probability')
@@ -419,12 +392,52 @@ def plot_hyperparams(cluster: Cluster[ConvNet], directory: str) -> None:
     mom_ax.set_xlim(0, max_step_num)
     mom_ax.set_ylim(-0.01, 1.01)
     # Add data to plots
-    _plot_graph_hyperparams(ranked_pop[0], max_step_num, kp_ax, opt_ax, mom_ax, True)
-    for i in range(1, len(ranked_pop)):
-        _plot_graph_hyperparams(ranked_pop[i], max_step_num, kp_ax, opt_ax, mom_ax, False)
+    _plot_history_hyperparams(ranked_histories[0], max_step_num, kp_ax, opt_ax, mom_ax, True)
+    for i in range(1, len(ranked_histories)):
+        _plot_history_hyperparams(ranked_histories[i], max_step_num, kp_ax, opt_ax, mom_ax, False)
     # Save plots
     if not os.path.exists(directory):
         os.makedirs(directory)
     kp_fig.savefig(os.path.join(directory, "keep_probability.png"))
     opt_fig.savefig(os.path.join(directory, "optimizer_and_learning_rate.png"))
     mom_fig.savefig(os.path.join(directory, "momentum.png"))
+
+
+class LocalCluster(PBTLocalCluster[ConvNet]):
+    """
+    A PBT LocalCluster that trains ConvNets.
+    """
+
+    def __init__(self, pop_size: int, train_data, test_data) -> None:
+        """
+        Creates a new LocalCluster with <pop_size> ConvNets, all with training
+        Dataset <train_data> and testing Dataset <test_data>.
+        """
+        super().__init__(pop_size, lambda num, sess: ConvNet(num, sess, train_data, test_data))
+
+    def exploit_and_or_explore(self) -> None:
+        # Rank population by accuracy
+        accuracies = {}
+        for graph in self.population:
+            accuracy = graph.get_accuracy()
+            print('Graph', graph.num, 'accuracy:', accuracy)
+            accuracies[graph] = accuracy
+        ranked_pop = sorted(self.population, key=lambda graph: accuracies[graph])
+        if len(ranked_pop) > 1:
+            # Bottom 20% copies top 20%
+            worst_graphs = ranked_pop[:math.ceil(0.2 * len(ranked_pop))]
+            best_graphs = ranked_pop[math.floor(0.8 * len(ranked_pop)):]
+            for i in range(len(worst_graphs)):
+                print('Graph', worst_graphs[i].num, 'copying graph', best_graphs[i].num)
+                worst_graphs[i].copy_and_explore(best_graphs[i])
+
+    def plot_hyperparams(self, directory: str) -> None:
+        """
+        Creates step plots of the hyperparameter update histories of this
+        LocalCluster's population and saves them as images in <directory>.
+
+        <directory> will be created if it does not already exist.
+        """
+        ranked_pop = sorted(self.population, key=lambda graph: -graph.get_accuracy())
+        max_step_num = max(graph.step_num for graph in self.population)
+        _plot_hyperparams([graph.get_update_history() for graph in ranked_pop], max_step_num, directory)

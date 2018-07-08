@@ -72,25 +72,6 @@ class Graph:
         """
         raise NotImplementedError
 
-    def exploit_and_or_explore(self, population: List['Graph']) -> None:
-        """
-        Exploits <population>, a list of Graphs of the same type as this one,
-        to improve this Graph, and/or modifies this Graph to explore a
-        different option, if those actions are judged to be currently
-        necessary.
-        """
-        raise NotImplementedError
-
-    @staticmethod
-    def population_exploit_explore(population: List['Graph']) -> None:
-        """
-        Causes all of the Graphs in <population>, a list of Graphs of this
-        type, to exploit and/or explore each other simultaneously, like a
-        combined version of all of the Graphs' exploit_and_or_explore()
-        methods.
-        """
-        raise NotImplementedError
-
 
 class Cluster(Generic[T]):
     """
@@ -142,7 +123,7 @@ class LocalCluster(Generic[T], Cluster[T]):
 
     def __init__(self, pop_size: int, graph_maker: Callable[[int, tf.Session], T]) -> None:
         """
-        Creates a new LocalCluster with <pop_size> graphs returned by
+        Creates a new LocalCluster with <pop_size> Graphs returned by
         <graph_maker> as its population.
 
         <pop_size> is the number of Graphs that will make up this
@@ -185,7 +166,7 @@ class LocalCluster(Generic[T], Cluster[T]):
                     keep_training = True
                     if graph.step_num > 0:
                         print('Exploiting/exploring')
-                        graph.population_exploit_explore(self.population)
+                        self.exploit_and_or_explore()
                         print('Finished exploiting/exploring')
                     break
             if keep_training:
@@ -196,6 +177,15 @@ class LocalCluster(Generic[T], Cluster[T]):
                         print('Graph', graph.num, 'ending training run at step', graph.step_num)
             else:
                 break
+
+    def exploit_and_or_explore(self) -> None:
+        """
+        Causes each of the Graphs in this LocalCluster's population to exploit
+        the other Graphs to improve itself and/or modify itself to explore a
+        different option, if those actions are judged to be currently necessary
+        for it.
+        """
+        raise NotImplementedError
 
 
 class Hyperparameter:
