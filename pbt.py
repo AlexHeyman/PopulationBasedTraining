@@ -7,6 +7,7 @@ from typing import Iterable, List, Callable, TypeVar, Generic
 from collections import OrderedDict
 import tensorflow as tf
 
+
 T = TypeVar('T', bound='Graph')
 
 
