@@ -5,13 +5,13 @@ information at the end.
 
 import datetime
 from tensorflow.models.official.mnist.dataset import train, test
+from mnist import set_mnist_data
 from mnist_pbt import LocalCluster
 
 
 if __name__ == '__main__':
-    train_data = train('MNIST_data/')
-    test_data = test('MNIST_data/')
-    cluster = LocalCluster(50, train_data, test_data)
+    set_mnist_data(train('MNIST_data/'), test('MNIST_data/'))
+    cluster = LocalCluster(50)
     cluster.initialize_variables()
     training_start = datetime.datetime.now()
     cluster.train(20000)

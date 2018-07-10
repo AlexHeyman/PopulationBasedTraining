@@ -1,14 +1,38 @@
 """
-A convolutional neural network for MNIST.
+Information related to MNIST, including a convolutional neural network for it.
 """
 
-from typing import List
+from typing import List, Tuple
 import tensorflow as tf
 
 
 MNIST_TRAIN_SIZE = 60000
 MNIST_TEST_SIZE = 10000
 MNIST_TEST_BATCH_SIZE = 100
+
+mnist_train_data: tf.data.Dataset = None
+mnist_test_data: tf.data.Dataset = None
+
+
+def get_mnist_data() -> Tuple[tf.data.Dataset, tf.data.Dataset]:
+    """
+    Returns the on-record MNIST training Dataset and testing Dataset as a
+    tuple.
+
+    Before set_mnist_data() has been called for the first time, both Datasets
+    will be None.
+    """
+    return (mnist_train_data, mnist_test_data)
+
+
+def set_mnist_data(train_data: tf.data.Dataset, test_data: tf.data.Dataset) -> None:
+    """
+    Sets the on-record MNIST training Dataset and testing Dataset to
+    <train_data> and <test_data>, respectively.
+    """
+    global mnist_train_data, mnist_test_data
+    mnist_train_data = train_data
+    mnist_test_data = test_data
 
 
 def weight_variable(shape) -> tf.Variable:

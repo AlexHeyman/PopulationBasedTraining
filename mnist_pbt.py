@@ -12,7 +12,8 @@ from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from pbt import LocalCluster as PBTLocalCluster, Hyperparameter, HyperparamsUpdate, HyperparamsGraph
-from mnist_convnet import ConvNet as MNISTConvNet, MNIST_TRAIN_SIZE, MNIST_TEST_SIZE, MNIST_TEST_BATCH_SIZE
+from mnist import ConvNet as MNISTConvNet, MNIST_TRAIN_SIZE, MNIST_TEST_SIZE, MNIST_TEST_BATCH_SIZE,\
+    get_mnist_data
 
 
 class FloatHyperparameter(Hyperparameter):
@@ -197,12 +198,17 @@ class ConvNet(HyperparamsGraph):
     keep_prob: FloatHyperparameter
     accuracy: float
 
-    def __init__(self, num: int, sess: tf.Session, train_data, test_data) -> None:
+    def __init__(self, num: int, sess: tf.Session) -> None:
         """
-        Creates a new ConvNet, numbered <num> in its population, with Session
-        <sess>, training Dataset <train_data>, and testing Dataset <test_data>.
+        Creates a new ConvNet, numbered <num> in its population, with
+        associated Session <sess>.
+
+        This method uses mnist.get_mnist_data() to obtain this ConvNet's
+        training and testing data. Thus, mnist.set_mnist_data() must be called
+        before any ConvNets are initialized.
         """
         super().__init__(num, sess)
+        train_data, test_data = get_mnist_data()
         self.train_next = train_data\
             .shuffle(MNIST_TRAIN_SIZE).batch(50).repeat().make_one_shot_iterator().get_next()
         self.test_iterator = test_data.batch(MNIST_TEST_BATCH_SIZE).make_initializable_iterator()
@@ -408,12 +414,11 @@ class LocalCluster(PBTLocalCluster[ConvNet]):
     A PBT LocalCluster that trains ConvNets.
     """
 
-    def __init__(self, pop_size: int, train_data, test_data) -> None:
+    def __init__(self, pop_size: int) -> None:
         """
-        Creates a new LocalCluster with <pop_size> ConvNets, all with training
-        Dataset <train_data> and testing Dataset <test_data>.
+        Creates a new LocalCluster with <pop_size> ConvNets.
         """
-        super().__init__(pop_size, lambda num, sess: ConvNet(num, sess, train_data, test_data))
+        super().__init__(pop_size, lambda num, sess: ConvNet(num, sess))
 
     def exploit_and_or_explore(self) -> None:
         # Rank population by accuracy

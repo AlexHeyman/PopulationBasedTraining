@@ -5,15 +5,15 @@ its accuracy and the time spent training it.
 
 import datetime
 import tensorflow as tf
-from mnist_convnet import ConvNet, MNIST_TRAIN_SIZE, MNIST_TEST_SIZE, MNIST_TEST_BATCH_SIZE
+from mnist import ConvNet, MNIST_TRAIN_SIZE, MNIST_TEST_SIZE, MNIST_TEST_BATCH_SIZE,\
+    get_mnist_data, set_mnist_data
 from tensorflow.models.official.mnist.dataset import train, test
 
 
 if __name__ == '__main__':
-    train_data = train('MNIST_data/')
-    test_data = test('MNIST_data/')
-    train_next = train_data\
-        .shuffle(MNIST_TRAIN_SIZE).batch(50).repeat().make_one_shot_iterator().get_next()
+    set_mnist_data(train('MNIST_data/'), test('MNIST_data/'))
+    train_data, test_data = get_mnist_data()
+    train_next = train_data.shuffle(MNIST_TRAIN_SIZE).batch(50).repeat().make_one_shot_iterator().get_next()
     test_iterator = test_data.batch(MNIST_TEST_BATCH_SIZE).make_initializable_iterator()
     test_next = test_iterator.get_next()
 
