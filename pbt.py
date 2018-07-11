@@ -320,16 +320,16 @@ class HyperparamsGraph(Graph):
         Returns a multi-line string detailing this HyperparamsGraph's
         hyperparameter update history.
         """
-        string = ''
         updates = []
         update = self.last_update
         while update is not None:
             updates.append(update)
             update = update.prev
+        history = ''
         while len(updates) > 0:
             update = updates.pop()
-            string += 'Step ' + str(update.step_num) + os.linesep
+            history += 'Step ' + str(update.step_num) + os.linesep
             for name, value in update.hyperparams.items():
-                string += name + ': ' + value + os.linesep
-            string += os.linesep
-        return string
+                history += name + ': ' + value + os.linesep
+            history += os.linesep
+        return history
