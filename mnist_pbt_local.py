@@ -11,10 +11,10 @@ from mnist_pbt import LocalCluster
 
 if __name__ == '__main__':
     set_mnist_data(train('MNIST_data/'), test('MNIST_data/'))
-    cluster = LocalCluster(50)
+    cluster = LocalCluster(5)
     cluster.initialize_variables()
     training_start = datetime.datetime.now()
-    cluster.train(20000)
+    cluster.train(1000)
     print('Training time:', datetime.datetime.now() - training_start)
     ranked_pop = sorted(cluster.get_population(), key=lambda graph: -graph.get_accuracy())
     print()
@@ -23,5 +23,5 @@ if __name__ == '__main__':
         print('Accuracy:', graph.get_accuracy())
         print('Hyperparameter update history:')
         print()
-        graph.print_update_history()
+        print(graph.write_update_history())
     cluster.plot_hyperparams('plots/')

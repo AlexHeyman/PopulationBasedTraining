@@ -5,6 +5,7 @@ TensorFlow.
 
 from typing import Iterable, List, Callable, TypeVar, Generic
 from collections import OrderedDict
+import os
 import tensorflow as tf
 
 
@@ -314,11 +315,12 @@ class HyperparamsGraph(Graph):
             update = update.prev
         return reversed(updates)
 
-    def print_update_history(self) -> None:
+    def write_update_history(self) -> str:
         """
-        Prints this HyperparamsGraph's hyperparameter update history to the
-        console.
+        Returns a multi-line string detailing this HyperparamsGraph's
+        hyperparameter update history.
         """
+        string = ''
         updates = []
         update = self.last_update
         while update is not None:
@@ -326,7 +328,8 @@ class HyperparamsGraph(Graph):
             update = update.prev
         while len(updates) > 0:
             update = updates.pop()
-            print('Step', update.step_num)
+            string += 'Step ' + str(update.step_num) + os.linesep
             for name, value in update.hyperparams.items():
-                print(name + ': ' + value)
-            print()
+                string += name + ': ' + value + os.linesep
+            string += os.linesep
+        return string
