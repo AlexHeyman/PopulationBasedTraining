@@ -3,7 +3,7 @@ A convolutional neural network for MNIST that is compatible with
 population-based training.
 """
 
-from typing import Any, List, Callable
+from typing import Any, List, Tuple, Callable
 import math
 import random
 import os
@@ -379,8 +379,17 @@ def _plot_history_hyperparams(update_history: List[HyperparamsUpdate], max_step_
         mom_ax.step(mom_step_nums, moms, colormap[BLUE], where='post', zorder=zorder)
 
 
-def _plot_hyperparams(ranked_histories: List[List[HyperparamsUpdate]],
-                      max_step_num: int, directory: str) -> None:
+def plot_hyperparams(info: List[Tuple[int, List[HyperparamsUpdate], float]], directory: str) -> None:
+    """
+    Creates step plots of the hyperparameter update histories of ConvNets with
+    the specified information and saves them as images in <directory>.
+
+    <info> is a list of tuples, each corresponding to a ConvNet and containing
+    its step number, hyperparameter update history, and accuracy in that order.
+    <directory> will be created if it does not already exist.
+    """
+    ranked_histories = [graph_info[1] for graph_info in sorted(info, key=lambda graph_info: -graph_info[2])]
+    max_step_num = max(graph_info[0] for graph_info in info)
     # Keep probability plot
     kp_fig, kp_ax = plt.subplots()
     kp_ax.set(title='Dropout keep probability', xlabel='Step', ylabel='Keep probability')
@@ -443,6 +452,5 @@ class LocalCluster(PBTLocalCluster[ConvNet]):
 
         <directory> will be created if it does not already exist.
         """
-        ranked_pop = sorted(self.population, key=lambda graph: -graph.get_accuracy())
-        max_step_num = max(graph.step_num for graph in self.population)
-        _plot_hyperparams([graph.get_update_history() for graph in ranked_pop], max_step_num, directory)
+        plot_hyperparams([(graph.step_num, graph.get_update_history(), graph.accuracy)
+                          for graph in self.population], directory)
