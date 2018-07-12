@@ -134,9 +134,9 @@ class LocalCluster(Generic[T], Cluster[T]):
         """
         self.sess = tf.Session()
         self.population = []
-        for i in range(pop_size):
-            self.population.append(graph_maker(i, self.sess))
-            print('Graph', i, 'created')
+        for num in range(pop_size):
+            self.population.append(graph_maker(num, self.sess))
+            print('Graph', num, 'created')
 
     def get_population(self) -> List[T]:
         return self.population
@@ -273,6 +273,12 @@ class HyperparamsUpdate:
             if not hyperparam.unused:
                 self.hyperparams[hyperparam.name] = str(hyperparam)
 
+    def __str__(self) -> str:
+        string = 'Step ' + str(self.step_num) + os.linesep
+        for name, value in self.hyperparams.items():
+            string += name + ': ' + value + os.linesep
+        return string + os.linesep
+
 
 class HyperparamsGraph(Graph):
     """
@@ -314,22 +320,3 @@ class HyperparamsGraph(Graph):
             updates.append(update)
             update = update.prev
         return reversed(updates)
-
-    def write_update_history(self) -> str:
-        """
-        Returns a multi-line string detailing this HyperparamsGraph's
-        hyperparameter update history.
-        """
-        updates = []
-        update = self.last_update
-        while update is not None:
-            updates.append(update)
-            update = update.prev
-        history = ''
-        while len(updates) > 0:
-            update = updates.pop()
-            history += 'Step ' + str(update.step_num) + os.linesep
-            for name, value in update.hyperparams.items():
-                history += name + ': ' + value + os.linesep
-            history += os.linesep
-        return history

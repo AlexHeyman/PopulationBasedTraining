@@ -23,5 +23,5 @@ if __name__ == '__main__':
         print('Accuracy:', graph.get_accuracy())
         print('Hyperparameter update history:')
         print()
-        print(graph.write_update_history())
+        print(''.join(str(update) for update in graph.get_update_history()))
     cluster.plot_hyperparams('plots/')
