@@ -430,14 +430,14 @@ class LocalCluster(PBTLocalCluster[ConvNet]):
         super().__init__(pop_size, lambda num, sess: ConvNet(num, sess))
 
     def exploit_and_or_explore(self) -> None:
-        # Rank population by accuracy
         accuracies = {}
         for graph in self.population:
             accuracy = graph.get_accuracy()
             print('Graph', graph.num, 'accuracy:', accuracy)
             accuracies[graph] = accuracy
-        ranked_pop = sorted(self.population, key=lambda graph: accuracies[graph])
-        if len(ranked_pop) > 1:
+        if len(self.population) > 1:
+            # Rank population by accuracy
+            ranked_pop = sorted(self.population, key=lambda graph: accuracies[graph])
             # Bottom 20% copies top 20%
             worst_graphs = ranked_pop[:math.ceil(0.2 * len(ranked_pop))]
             best_graphs = ranked_pop[math.floor(0.8 * len(ranked_pop)):]
