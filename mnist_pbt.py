@@ -279,12 +279,10 @@ class ConvNet(HyperparamsGraph):
             if self.step_num % 500 == 0:
                 break
 
-    def copy_and_explore(self, graph: 'ConvNet'):
+    def explore(self):
         """
-        Copies the specified ConvNet, randomly changing the copied
-        hyperparameters.
+        Randomly perturbs some of this ConvNet's hyperparameters.
         """
-        self.set_value(graph.get_value())
         # Ensure that at least one used hyperparameter is perturbed
         rand = random.randrange(1, 2 ** sum(1 for hyperparam in self.hyperparams if not hyperparam.unused))
         perturbed_used_hyperparam = False
@@ -442,8 +440,11 @@ class LocalCluster(PBTLocalCluster[ConvNet]):
             worst_graphs = ranked_pop[:math.ceil(0.2 * len(ranked_pop))]
             best_graphs = ranked_pop[math.floor(0.8 * len(ranked_pop)):]
             for i in range(len(worst_graphs)):
-                print('Graph', worst_graphs[i].num, 'copying graph', best_graphs[i].num)
-                worst_graphs[i].copy_and_explore(best_graphs[i])
+                bad_graph = worst_graphs[i]
+                good_graph = best_graphs[i]
+                print('Graph', bad_graph.num, 'copying graph', good_graph.num)
+                bad_graph.set_value(good_graph.get_value())
+                bad_graph.explore()
 
     def plot_hyperparams(self, directory: str) -> None:
         """
