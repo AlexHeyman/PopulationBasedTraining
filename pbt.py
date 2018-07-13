@@ -170,7 +170,7 @@ class LocalCluster(Generic[T], Cluster[T]):
                         print('Exploiting/exploring')
                         self.exploit_and_or_explore()
                         print('Finished exploiting/exploring')
-                    break
+                        break
             if keep_training:
                 for graph in self.population:
                     if graph.step_num < until_step_num:
