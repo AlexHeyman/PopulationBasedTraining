@@ -309,14 +309,14 @@ class HyperparamsGraph(Graph):
         """
         self.last_update = HyperparamsUpdate(self)
 
-    def get_update_history(self) -> Iterable[HyperparamsUpdate]:
+    def get_update_history(self) -> List[HyperparamsUpdate]:
         """
-        Returns an iterable of this HyperparamsGraph's HyperparamsUpdates in
-        order from least to most recent.
+        Returns a list of this HyperparamsGraph's HyperparamsUpdates in order
+        from least to most recent.
         """
         updates = []
         update = self.last_update
         while update is not None:
             updates.append(update)
             update = update.prev
-        return reversed(updates)
+        return list(reversed(updates))
