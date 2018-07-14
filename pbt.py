@@ -3,7 +3,7 @@ An implementation of population-based training of neural networks for
 TensorFlow.
 """
 
-from typing import Iterable, List, Callable, TypeVar, Generic
+from typing import List, Callable, TypeVar, Generic
 from collections import OrderedDict
 import os
 import tensorflow as tf

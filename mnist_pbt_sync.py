@@ -1,7 +1,7 @@
 """
 """
 
-from typing import Union, Any, List, Tuple, Dict, Callable
+from typing import Union, Any, List, Tuple, Dict
 from enum import Enum, auto
 from collections import OrderedDict
 import math
