@@ -1,7 +1,7 @@
 """
 """
 
-from typing import Any, List, Tuple, Dict
+from typing import Union, Any, List, Tuple, Dict, Callable
 from enum import Enum, auto
 from collections import OrderedDict
 import math
@@ -14,11 +14,14 @@ from mnist import set_mnist_data
 from mnist_pbt import ConvNet, plot_hyperparams
 
 
+Device = Union[str, None]
+
+
 class Instruction(Enum):
     EXIT = auto()
     INIT = auto()
     GET = auto()
-    SET_TRAIN_GET = auto()
+    COPY_TRAIN_GET = auto()
 
 
 class Attribute(Enum):
@@ -39,31 +42,32 @@ comm = MPI.COMM_WORLD
 
 def worker(cluster_rank: int) -> None:
     sess = tf.Session()
-    start_num, end_num = comm.recv(source=cluster_rank)
-    graphs = OrderedDict()
-    for num in range(start_num, end_num):
-        graphs[num] = ConvNet(num, sess)
-    while True:
-        data = comm.recv(source=cluster_rank)
-        instruction = data[0]
-        if instruction == Instruction.EXIT:
-            break
-        elif instruction == Instruction.INIT:
-            for graph in graphs.values():
-                graph.initialize_variables()
-        else:
-            if instruction == Instruction.SET_TRAIN_GET:
-                new_values = data[3]
-                for num, new_value in new_values.items():
-                    graphs[num].set_value(new_value)
-                    graphs[num].explore()
+    device, start_num, end_num = comm.recv(source=cluster_rank)
+    with tf.device(device):
+        graphs = OrderedDict()
+        for num in range(start_num, end_num):
+            graphs[num] = ConvNet(num, sess)
+        while True:
+            data = comm.recv(source=cluster_rank)
+            instruction = data[0]
+            if instruction == Instruction.EXIT:
+                break
+            elif instruction == Instruction.INIT:
                 for graph in graphs.values():
-                    graph.train()
-            nums = data[1]
-            attributes = data[2]
-            attribute_getters = [GETTERS[attribute] for attribute in attributes]
-            comm.send({num: tuple(getter(graphs[num]) for getter in attribute_getters) for num in nums},
-                      dest=cluster_rank)
+                    graph.initialize_variables()
+            else:
+                if instruction == Instruction.COPY_TRAIN_GET:
+                    new_values = data[3]
+                    for num, new_value in new_values.items():
+                        graphs[num].set_value(new_value)
+                        graphs[num].explore()
+                    for graph in graphs.values():
+                        graph.train()
+                nums = data[1]
+                attributes = data[2]
+                attribute_getters = [GETTERS[attribute] for attribute in attributes]
+                comm.send({num: tuple(getter(graphs[num]) for getter in attribute_getters) for num in nums},
+                          dest=cluster_rank)
 
 
 class Cluster(PBTCluster[ConvNet]):
@@ -73,22 +77,22 @@ class Cluster(PBTCluster[ConvNet]):
     rank_graphs: Dict[int, List[int]]
     graph_ranks: List[int]
 
-    def __init__(self, pop_size: int, worker_ranks: List[int]) -> None:
+    def __init__(self, pop_size: int, rank_devices: Dict[int, Device]) -> None:
         self.sess = tf.Session()
         self.pop_size = pop_size
-        self.rank_graphs = {rank: [] for rank in worker_ranks}
+        self.rank_graphs = {rank: [] for rank in rank_devices.keys()}
         self.graph_ranks = []
-        graphs_per_worker = pop_size / len(worker_ranks)
+        graphs_per_worker = pop_size / len(rank_devices)
         graph_num = 0
         graphs_to_make = 0
         reqs = []
-        for rank in worker_ranks:
+        for rank, device in rank_devices.items():
             graphs_to_make += graphs_per_worker
             start_num = graph_num
             graph_num = min(graph_num + math.ceil(graphs_to_make), pop_size)
             self.rank_graphs[rank].extend(range(start_num, graph_num))
             self.graph_ranks.extend(rank for _ in range(start_num, graph_num))
-            reqs.append(comm.isend((start_num, graph_num), dest=rank))
+            reqs.append(comm.isend((device, start_num, graph_num), dest=rank))
             graphs_to_make -= (graph_num - start_num)
         for req in reqs:
             req.wait()
@@ -163,7 +167,7 @@ class Cluster(PBTCluster[ConvNet]):
                 for rank, graphs in self.rank_graphs.items():
                     rank_new_values = {num: new_values[num] for num in graphs if num in new_values.keys()}
                     reqs.append(comm.isend(
-                        (Instruction.SET_TRAIN_GET, graphs, attribute_ids, rank_new_values), dest=rank))
+                        (Instruction.COPY_TRAIN_GET, graphs, attribute_ids, rank_new_values), dest=rank))
                 for req in reqs:
                     req.wait()
                 for rank in self.rank_graphs.keys():
@@ -203,26 +207,25 @@ class Cluster(PBTCluster[ConvNet]):
             req.wait()
 
 
-with tf.device('/cpu:0'):
-    set_mnist_data(train('MNIST_data/'), test('MNIST_data/'))
-    if comm.Get_rank() == 0:
-        cluster = Cluster(50, list(range(1, comm.Get_size())))
-        cluster.initialize_variables()
-        training_start = datetime.datetime.now()
-        cluster.train(20000)
-        print('Training time:', datetime.datetime.now() - training_start)
-        attributes = cluster.get_attributes(
-            [Attribute.STEP_NUM, Attribute.UPDATE_HISTORY, Attribute.ACCURACY])
-        ranked_nums = sorted(range(len(attributes)), key=lambda num: -attributes[num][2])
+set_mnist_data(train('MNIST_data/'), test('MNIST_data/'))
+if comm.Get_rank() == 0:
+    cluster = Cluster(50, {rank: '/cpu:0' for rank in range(1, comm.Get_size())})
+    cluster.initialize_variables()
+    training_start = datetime.datetime.now()
+    cluster.train(20000)
+    print('Training time:', datetime.datetime.now() - training_start)
+    attributes = cluster.get_attributes(
+        [Attribute.STEP_NUM, Attribute.UPDATE_HISTORY, Attribute.ACCURACY])
+    ranked_nums = sorted(range(len(attributes)), key=lambda num: -attributes[num][2])
+    print()
+    for num in ranked_nums:
+        graph_info = attributes[num]
+        print('Graph', num)
+        print('Accuracy:', graph_info[2])
+        print('Hyperparameter update history:')
         print()
-        for num in ranked_nums:
-            graph_info = attributes[num]
-            print('Graph', num)
-            print('Accuracy:', graph_info[2])
-            print('Hyperparameter update history:')
-            print()
-            print(''.join(str(update) for update in graph_info[1]))
-        plot_hyperparams(attributes, 'plots/')
-        cluster.exit_workers()
-    else:
-        worker(0)
+        print(''.join(str(update) for update in graph_info[1]))
+    plot_hyperparams(attributes, 'plots/')
+    cluster.exit_workers()
+else:
+    worker(0)
