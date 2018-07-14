@@ -37,10 +37,8 @@ GETTERS = {Attribute.STEP_NUM: (lambda graph: graph.step_num),
            Attribute.ACCURACY: (lambda graph: graph.get_accuracy())
            }
 
-comm = MPI.COMM_WORLD
 
-
-def worker(cluster_rank: int) -> None:
+def worker(comm: MPI.Comm, cluster_rank: int) -> None:
     sess = tf.Session()
     device, start_num, end_num = comm.recv(source=cluster_rank)
     with tf.device(device):
@@ -74,12 +72,14 @@ class Cluster(PBTCluster[ConvNet]):
 
     sess: tf.Session
     pop_size: int
+    comm: MPI.Comm
     rank_graphs: Dict[int, List[int]]
     graph_ranks: List[int]
 
-    def __init__(self, pop_size: int, rank_devices: Dict[int, Device]) -> None:
+    def __init__(self, pop_size: int, comm: MPI.Comm, rank_devices: Dict[int, Device]) -> None:
         self.sess = tf.Session()
         self.pop_size = pop_size
+        self.comm = comm
         self.rank_graphs = {rank: [] for rank in rank_devices.keys()}
         self.graph_ranks = []
         graphs_per_worker = pop_size / len(rank_devices)
@@ -109,7 +109,7 @@ class Cluster(PBTCluster[ConvNet]):
     def initialize_variables(self) -> None:
         reqs = []
         for rank in self.rank_graphs.keys():
-            reqs.append(comm.isend((Instruction.INIT,), dest=rank))
+            reqs.append(self.comm.isend((Instruction.INIT,), dest=rank))
         for req in reqs:
             req.wait()
         print('Variables initialized')
@@ -125,8 +125,8 @@ class Cluster(PBTCluster[ConvNet]):
                 best_acc = accuracy
         graph = ConvNet(best_num, self.sess)
         best_rank = self.graph_ranks[best_num]
-        comm.send((Instruction.GET, [best_num], [Attribute.VALUE]), dest=best_rank)
-        graph.set_value(comm.recv(source=best_rank)[best_num][0])
+        self.comm.send((Instruction.GET, [best_num], [Attribute.VALUE]), dest=best_rank)
+        graph.set_value(self.comm.recv(source=best_rank)[best_num][0])
         return graph
 
     def _exploit_and_or_explore(self, attributes: List[Tuple[int, float]]) -> Dict[int, Any]:
@@ -166,12 +166,12 @@ class Cluster(PBTCluster[ConvNet]):
                 reqs = []
                 for rank, graphs in self.rank_graphs.items():
                     rank_new_values = {num: new_values[num] for num in graphs if num in new_values.keys()}
-                    reqs.append(comm.isend(
+                    reqs.append(self.comm.isend(
                         (Instruction.COPY_TRAIN_GET, graphs, attribute_ids, rank_new_values), dest=rank))
                 for req in reqs:
                     req.wait()
                 for rank in self.rank_graphs.keys():
-                    attributes_dict.update(comm.recv(source=rank))
+                    attributes_dict.update(self.comm.recv(source=rank))
                 attributes = [attributes_dict[num] for num in range(self.pop_size)]
                 print('Finished training runs')
             else:
@@ -192,24 +192,25 @@ class Cluster(PBTCluster[ConvNet]):
         attributes_dict = {}
         reqs = []
         for rank, graphs in rank_graphs.items():
-            reqs.append(comm.isend((Instruction.GET, graphs, attribute_ids), dest=rank))
+            reqs.append(self.comm.isend((Instruction.GET, graphs, attribute_ids), dest=rank))
         for req in reqs:
             req.wait()
         for rank in rank_graphs.keys():
-            attributes_dict.update(comm.recv(source=rank))
+            attributes_dict.update(self.comm.recv(source=rank))
         return [attributes_dict[num] for num in graph_nums]
 
     def exit_workers(self):
         reqs = []
         for rank in self.rank_graphs.keys():
-            reqs.append(comm.isend((Instruction.EXIT,), dest=rank))
+            reqs.append(self.comm.isend((Instruction.EXIT,), dest=rank))
         for req in reqs:
             req.wait()
 
 
 set_mnist_data(train('MNIST_data/'), test('MNIST_data/'))
+comm = MPI.COMM_WORLD
 if comm.Get_rank() == 0:
-    cluster = Cluster(50, {rank: '/cpu:0' for rank in range(1, comm.Get_size())})
+    cluster = Cluster(50, comm, {rank: '/cpu:0' for rank in range(1, comm.Get_size())})
     cluster.initialize_variables()
     training_start = datetime.datetime.now()
     cluster.train(20000)
@@ -228,4 +229,4 @@ if comm.Get_rank() == 0:
     plot_hyperparams(attributes, 'plots/')
     cluster.exit_workers()
 else:
-    worker(0)
+    worker(comm, 0)
