@@ -86,18 +86,18 @@ class Cluster(Generic[T]):
     T is the type of Graph that this Cluster trains.
     """
 
+    def initialize_variables(self) -> None:
+        """
+        Initializes all of the TensorFlow Variables that this Cluster's Graphs
+        created in their initializers.
+        """
+        raise NotImplementedError
+
     def get_population(self) -> List[T]:
         """
         Returns this Cluster's population of Graphs.
 
         The returned list should not be modified.
-        """
-        raise NotImplementedError
-
-    def initialize_variables(self) -> None:
-        """
-        Initializes all of the TensorFlow Variables that this Cluster's Graphs
-        created in their initializers.
         """
         raise NotImplementedError
 
@@ -138,13 +138,13 @@ class LocalCluster(Generic[T], Cluster[T]):
             self.population.append(graph_maker(num, self.sess))
             print('Graph', num, 'created')
 
-    def get_population(self) -> List[T]:
-        return self.population
-
     def initialize_variables(self):
         for graph in self.population:
             graph.initialize_variables()
             print('Graph', graph.num, 'variables initialized')
+
+    def get_population(self) -> List[T]:
+        return self.population
 
     def get_highest_metric_graph(self) -> T:
         highest_graph = None

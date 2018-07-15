@@ -1,4 +1,12 @@
 """
+Executes synchronous population-based training on MNIST ConvNets using MPI for
+Python, reporting its results at the end.
+
+This file must be run with the following command:
+
+mpiexec -n <m> python </path/to/>mnist_pbt_sync.py
+
+where <m>, an integer no less than 2, is the number of processes to use.
 """
 
 from typing import Union, Any, List, Tuple, Dict
@@ -17,14 +25,10 @@ from mnist_pbt import ConvNet, plot_hyperparams
 Device = Union[str, None]
 
 
-class Instruction(Enum):
-    EXIT = auto()
-    INIT = auto()
-    GET = auto()
-    COPY_TRAIN_GET = auto()
-
-
 class Attribute(Enum):
+    """
+    An attribute of a ConvNet that its Cluster can access remotely.
+    """
     STEP_NUM = auto()
     VALUE = auto()
     UPDATE_HISTORY = auto()
@@ -38,7 +42,23 @@ GETTERS = {Attribute.STEP_NUM: (lambda graph: graph.step_num),
            }
 
 
+class Instruction(Enum):
+    """
+    A type of instruction that a Cluster can send to its worker processes.
+    """
+    EXIT = auto()
+    INIT = auto()
+    GET = auto()
+    COPY_TRAIN_GET = auto()
+
+
 def worker(comm: MPI.Comm, cluster_rank: int) -> None:
+    """
+    The behavior of a Cluster's worker process.
+
+    <comm> is the MPI Comm that the Cluster and its workers use to communicate,
+    and <cluster_rank> is the rank of the Cluster's process.
+    """
     sess = tf.Session()
     device, start_num, end_num = comm.recv(source=cluster_rank)
     with tf.device(device):
@@ -69,6 +89,13 @@ def worker(comm: MPI.Comm, cluster_rank: int) -> None:
 
 
 class Cluster(PBTCluster[ConvNet]):
+    """
+    A PBT Cluster that synchronously trains ConvNets, distributed over multiple
+    worker processes, using MPI for Python.
+
+    A Cluster's get_population() and get_highest_metric_graph() methods return
+    copies of its ConvNets on the Cluster's own process.
+    """
 
     sess: tf.Session
     pop_size: int
@@ -77,6 +104,17 @@ class Cluster(PBTCluster[ConvNet]):
     graph_ranks: List[int]
 
     def __init__(self, pop_size: int, comm: MPI.Comm, rank_devices: Dict[int, Device]) -> None:
+        """
+        Creates a new Cluster with <pop_size> ConvNets.
+
+        <comm> is the MPI Comm that this Cluster and its worker processes use
+        to communicate. <rank_devices> is a dictionary in which each key is a
+        worker's process rank and its corresponding value is the TensorFlow
+        device on which that worker should create its assigned ConvNets.
+
+        worker(<comm>, <rank>), where <rank> is the rank of this Cluster's
+        process, must be called independently in each worker process.
+        """
         self.sess = tf.Session()
         self.pop_size = pop_size
         self.comm = comm
@@ -97,6 +135,14 @@ class Cluster(PBTCluster[ConvNet]):
         for req in reqs:
             req.wait()
 
+    def initialize_variables(self) -> None:
+        reqs = []
+        for rank in self.rank_graphs.keys():
+            reqs.append(self.comm.isend((Instruction.INIT,), dest=rank))
+        for req in reqs:
+            req.wait()
+        print('Variables initialized')
+
     def get_population(self) -> List[ConvNet]:
         attributes = self.get_attributes([Attribute.VALUE])
         population = []
@@ -105,14 +151,6 @@ class Cluster(PBTCluster[ConvNet]):
             graph.set_value(attributes[num][0])
             population.append(graph)
         return population
-
-    def initialize_variables(self) -> None:
-        reqs = []
-        for rank in self.rank_graphs.keys():
-            reqs.append(self.comm.isend((Instruction.INIT,), dest=rank))
-        for req in reqs:
-            req.wait()
-        print('Variables initialized')
 
     def get_highest_metric_graph(self) -> ConvNet:
         attributes = self.get_attributes([Attribute.ACCURACY])
@@ -178,6 +216,17 @@ class Cluster(PBTCluster[ConvNet]):
                 break
 
     def get_attributes(self, attribute_ids: List[Attribute], graph_nums: List[int]=None) -> List[Tuple]:
+        """
+        Returns the attributes specified by <attribute_ids> of this Cluster's
+        ConvNets with numbers <graph_nums>.
+
+        The return value will be a list of tuples, each containing the
+        attributes of one ConvNet in the order they are listed in
+        <attribute_ids>. If <graph_nums> is None or not specified, the list
+        will contain a tuple for each of this Cluster's ConvNets in order of
+        increasing number. Otherwise, the list will contain a tuple for each
+        ConvNet in the order their numbers appear in <graph_nums>.
+        """
         if graph_nums is None:
             graph_nums = list(range(self.pop_size))
             rank_graphs = self.rank_graphs
@@ -200,6 +249,12 @@ class Cluster(PBTCluster[ConvNet]):
         return [attributes_dict[num] for num in graph_nums]
 
     def exit_workers(self):
+        """
+        Instructs this Cluster's worker processes to exit their worker()
+        functions, rendering this Cluster unable to communicate with them.
+
+        None of this Cluster's methods should be called after this one.
+        """
         reqs = []
         for rank in self.rank_graphs.keys():
             reqs.append(self.comm.isend((Instruction.EXIT,), dest=rank))
