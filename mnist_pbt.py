@@ -11,7 +11,7 @@ from matplotlib.axes import Axes
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from pbt import LocalCluster as PBTLocalCluster, Hyperparameter, HyperparamsUpdate, HyperparamsGraph
+from pbt import Hyperparameter, HyperparamsUpdate, HyperparamsGraph
 from mnist import ConvNet as MNISTConvNet, MNIST_TRAIN_SIZE, MNIST_TEST_SIZE, MNIST_TEST_BATCH_SIZE,\
     get_mnist_data
 
@@ -386,6 +386,7 @@ def plot_hyperparams(info: List[Tuple[int, List[HyperparamsUpdate], float]], dir
     its step number, hyperparameter update history, and accuracy in that order.
     <directory> will be created if it does not already exist.
     """
+    print('Plotting hyperparameters')
     ranked_histories = [graph_info[1] for graph_info in sorted(info, key=lambda graph_info: -graph_info[2])]
     max_step_num = max(graph_info[0] for graph_info in info)
     # Keep probability plot
@@ -414,44 +415,4 @@ def plot_hyperparams(info: List[Tuple[int, List[HyperparamsUpdate], float]], dir
     kp_fig.savefig(os.path.join(directory, "keep_probability.png"))
     opt_fig.savefig(os.path.join(directory, "optimizer_and_learning_rate.png"))
     mom_fig.savefig(os.path.join(directory, "momentum.png"))
-
-
-class LocalCluster(PBTLocalCluster[ConvNet]):
-    """
-    A PBT LocalCluster that trains ConvNets.
-    """
-
-    def __init__(self, pop_size: int) -> None:
-        """
-        Creates a new LocalCluster with <pop_size> ConvNets.
-        """
-        super().__init__(pop_size, lambda num, sess: ConvNet(num, sess))
-
-    def exploit_and_or_explore(self) -> None:
-        accuracies = {}
-        for graph in self.population:
-            accuracy = graph.get_accuracy()
-            print('Graph', graph.num, 'accuracy:', accuracy)
-            accuracies[graph] = accuracy
-        if len(self.population) > 1:
-            # Rank population by accuracy
-            ranked_pop = sorted(self.population, key=lambda graph: accuracies[graph])
-            # Bottom 20% copies top 20%
-            worst_graphs = ranked_pop[:math.ceil(0.2 * len(ranked_pop))]
-            best_graphs = ranked_pop[math.floor(0.8 * len(ranked_pop)):]
-            for i in range(len(worst_graphs)):
-                bad_graph = worst_graphs[i]
-                good_graph = best_graphs[i]
-                print('Graph', bad_graph.num, 'copying graph', good_graph.num)
-                bad_graph.set_value(good_graph.get_value())
-                bad_graph.explore()
-
-    def plot_hyperparams(self, directory: str) -> None:
-        """
-        Creates step plots of the hyperparameter update histories of this
-        LocalCluster's population and saves them as images in <directory>.
-
-        <directory> will be created if it does not already exist.
-        """
-        plot_hyperparams([(graph.step_num, graph.get_update_history(), graph.accuracy)
-                          for graph in self.population], directory)
+    print('Hyperparameter plots saved in directory:', directory)
