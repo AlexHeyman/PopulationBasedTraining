@@ -3,7 +3,7 @@ A convolutional neural network for MNIST that is compatible with
 population-based training.
 """
 
-from typing import Any, List, Tuple, Callable
+from typing import Any, Iterable, List, Tuple, Callable
 import math
 import random
 import os
@@ -223,15 +223,18 @@ class ConvNet(HyperparamsGraph):
             tf.nn.softmax_cross_entropy_with_logits_v2(labels=one_hot_y_, logits=self.net.y))
         self.optimizer = OptimizerHyperparameter(self, cross_entropy)
         self.accuracy = None
+        self.value = None
 
     def initialize_variables(self) -> None:
         super().initialize_variables()
         self.net.initialize_variables()
 
     def get_value(self):
-        return (self.step_num, self.sess.run(self.net.vars),
-                [hyperparam.get_value() for hyperparam in self.hyperparams],
-                self.last_update, self.accuracy)
+        if self.value is None:
+            self.value = (self.step_num, self.sess.run(self.net.vars),
+                          [hyperparam.get_value() for hyperparam in self.hyperparams],
+                          self.last_update, self.accuracy)
+        return self.value
 
     def set_value(self, value) -> None:
         step_num, var_values, hyperparam_values, last_update, accuracy = value
@@ -242,6 +245,7 @@ class ConvNet(HyperparamsGraph):
             self.hyperparams[i].set_value(hyperparam_values[i])
         self.last_update = last_update
         self.accuracy = accuracy
+        self.value = value
 
     def get_accuracy(self) -> float:
         """
@@ -261,6 +265,7 @@ class ConvNet(HyperparamsGraph):
             except tf.errors.OutOfRangeError:
                 pass
             self.accuracy = size_accuracy / MNIST_TEST_SIZE
+            self.value = None
         return self.accuracy
 
     def get_metric(self) -> float:
@@ -271,6 +276,7 @@ class ConvNet(HyperparamsGraph):
         self.sess.run(self.optimizer.get_current_minimizer(),
                       feed_dict={self.x: train_images, self.y_: train_labels})
         self.accuracy = None
+        self.value = None
         self.step_num += 1
 
     def train(self) -> None:
@@ -294,6 +300,7 @@ class ConvNet(HyperparamsGraph):
             elif rand & (2 ** i) != 0:
                 hyperparam.perturb()
                 perturbed_used_hyperparam = True
+        self.value = None
         self.record_update()
 
 
@@ -313,14 +320,12 @@ _NO_DATA = []
 OPT_LINES = [Line2D(_NO_DATA, _NO_DATA, color=OPT_COLORS[opt]) for opt in OPTS]
 
 
-def _plot_history_hyperparams(update_history: List[HyperparamsUpdate], max_step_num: int,
-                              kp_ax: Axes, opt_ax: Axes, mom_ax: Axes, best: bool) -> None:
-    if best:
+def _plot_history_hyperparams(step_num: int, update_history: Iterable[HyperparamsUpdate], zorder: float,
+                              kp_ax: Axes, opt_ax: Axes, mom_ax: Axes) -> None:
+    if zorder > 1:
         colormap = IDENTITY
-        zorder = 1
     else:
         colormap = LIGHTER
-        zorder = 0
     current_opt = None
     # Keep probability data
     kp_step_nums = []
@@ -351,8 +356,8 @@ def _plot_history_hyperparams(update_history: List[HyperparamsUpdate], max_step_
                     moms.append(last_mom)
                     mom_ax.step(mom_step_nums, moms, colormap[BLUE], where='post', zorder=zorder)
                     # Start a new one
-                    mom_step_nums = [update.step_num]
-                    moms = [last_mom]
+                    mom_step_nums = []
+                    moms = []
             current_opt = new_opt
         # Add the new update to the appropriate data
         kp_step_nums.append(update.step_num)
@@ -363,32 +368,34 @@ def _plot_history_hyperparams(update_history: List[HyperparamsUpdate], max_step_
             mom_step_nums.append(update.step_num)
             moms.append(float(update.hyperparams['Momentum']))
     # Plot the keep probability data
-    kp_step_nums.append(max_step_num)
+    kp_step_nums.append(step_num)
     kps.append(kps[-1])
     kp_ax.step(kp_step_nums, kps, colormap[BLUE], where='post', zorder=zorder)
     # Finish and plot the last segment of learning rate data
-    lr_step_nums.append(max_step_num)
+    lr_step_nums.append(step_num)
     log_lrs.append(log_lrs[-1])
     opt_ax.step(lr_step_nums, log_lrs, colormap[OPT_COLORS[current_opt]], where='post', zorder=zorder)
     if current_opt == 'MomentumOptimizer':
         # Finish and plot the last segment of momentum data
-        mom_step_nums.append(max_step_num)
+        mom_step_nums.append(step_num)
         moms.append(moms[-1])
         mom_ax.step(mom_step_nums, moms, colormap[BLUE], where='post', zorder=zorder)
 
 
-def plot_hyperparams(info: List[Tuple[int, List[HyperparamsUpdate], float]], directory: str) -> None:
+def plot_hyperparams(info: List[Tuple[int, List[HyperparamsUpdate], float]], peak_value, directory: str) -> None:
     """
     Creates step plots of the hyperparameter update histories of ConvNets with
     the specified information and saves them as images in <directory>.
 
     <info> is a list of tuples, each corresponding to a ConvNet and containing
     its step number, hyperparameter update history, and accuracy in that order.
-    <directory> will be created if it does not already exist.
+    <peak_info> is the value of a ConvNet that achieved the population's
+    all-time highest accuracy; this ConvNet's history will be displayed
+    specially marked in the plots. <directory> will be created if it does not
+    already exist.
     """
     print('Plotting hyperparameters')
-    ranked_histories = [graph_info[1] for graph_info in sorted(info, key=lambda graph_info: -graph_info[2])]
-    max_step_num = max(graph_info[0] for graph_info in info)
+    max_step_num = max(max(graph_info[0] for graph_info in info), peak_value[0])
     # Keep probability plot
     kp_fig, kp_ax = plt.subplots()
     kp_ax.set(title='Dropout keep probability', xlabel='Step', ylabel='Keep probability')
@@ -406,13 +413,18 @@ def plot_hyperparams(info: List[Tuple[int, List[HyperparamsUpdate], float]], dir
     mom_ax.set_xlim(0, max_step_num)
     mom_ax.set_ylim(-0.01, 1.01)
     # Add data to plots
-    _plot_history_hyperparams(ranked_histories[0], max_step_num, kp_ax, opt_ax, mom_ax, True)
-    for i in range(1, len(ranked_histories)):
-        _plot_history_hyperparams(ranked_histories[i], max_step_num, kp_ax, opt_ax, mom_ax, False)
+    peak_updates = []
+    update = peak_value[3]
+    while update is not None:
+        peak_updates.append(update)
+        update = update.prev
+    _plot_history_hyperparams(peak_value[0], reversed(peak_updates), 2, kp_ax, opt_ax, mom_ax)
+    for graph_info in info:
+        _plot_history_hyperparams(graph_info[0], graph_info[1], graph_info[2], kp_ax, opt_ax, mom_ax)
     # Save plots
     if not os.path.exists(directory):
         os.makedirs(directory)
-    kp_fig.savefig(os.path.join(directory, "keep_probability.png"))
-    opt_fig.savefig(os.path.join(directory, "optimizer_and_learning_rate.png"))
-    mom_fig.savefig(os.path.join(directory, "momentum.png"))
+    kp_fig.savefig(os.path.join(directory, 'keep_probability.png'))
+    opt_fig.savefig(os.path.join(directory, 'optimizer_and_learning_rate.png'))
+    mom_fig.savefig(os.path.join(directory, 'momentum.png'))
     print('Hyperparameter plots saved in directory:', directory)

@@ -50,20 +50,31 @@ class Cluster(LocalCluster[ConvNet]):
 
         <directory> will be created if it does not already exist.
         """
-        plot_hyperparams([(graph.step_num, graph.get_update_history(), graph.accuracy)
-                          for graph in self.population], directory)
+        plot_hyperparams([(graph.step_num, graph.get_update_history(), graph.accuracy) for graph in self.population],
+                         self.get_peak_metric_value(), directory)
 
 
 if __name__ == '__main__':
     set_mnist_data(train('MNIST_data/'), test('MNIST_data/'))
-    cluster = Cluster(50)
+    cluster = Cluster(40)
     cluster.initialize_variables()
     training_start = datetime.datetime.now()
     cluster.train(20000)
     print('Training time:', datetime.datetime.now() - training_start)
-    ranked_pop = sorted(cluster.get_population(), key=lambda graph: -graph.get_accuracy())
     print()
-    for graph in ranked_pop:
+    peak_value = cluster.get_peak_metric_value()
+    print('Peak graph')
+    print('Trained for', peak_value[0], 'steps')
+    print('Accuracy:', cluster.get_peak_metric())
+    print('Hyperparameter update history:')
+    print()
+    peak_updates = []
+    update = peak_value[3]
+    while update is not None:
+        peak_updates.append(update)
+        update = update.prev
+    print(''.join(str(update) for update in reversed(peak_updates)))
+    for graph in sorted(cluster.get_population(), key=lambda graph: -graph.get_accuracy()):
         print('Graph', graph.num)
         print('Accuracy:', graph.get_accuracy())
         print('Hyperparameter update history:')

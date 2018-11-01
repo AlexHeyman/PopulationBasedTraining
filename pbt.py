@@ -101,9 +101,22 @@ class Cluster(Generic[T]):
         """
         raise NotImplementedError
 
-    def get_highest_metric_graph(self) -> T:
+    def get_peak_metric(self) -> float:
         """
-        Returns this Cluster's Graph with the highest metric.
+        Returns this Cluster's all-time highest metric, chosen from all of its
+        Graphs' metrics each time they finish executing their own train()
+        method.
+
+        If none of this Cluster's Graphs have finished executing train(), this
+        method returns None.
+        """
+        raise NotImplementedError
+
+    def get_peak_metric_value(self):
+        """
+        Returns the value according to get_value() of a Graph in this Cluster
+        when it achieved the Cluster's all-time highest metric according to
+        get_peak_metric(), or None if get_peak_metric() returns None.
         """
         raise NotImplementedError
 
@@ -122,6 +135,7 @@ class LocalCluster(Generic[T], Cluster[T]):
 
     sess: tf.Session
     population: List[T]
+    peak_metric: float
 
     def __init__(self, pop_size: int, graph_maker: Callable[[int, tf.Session], T]) -> None:
         """
@@ -137,6 +151,8 @@ class LocalCluster(Generic[T], Cluster[T]):
         for num in range(pop_size):
             self.population.append(graph_maker(num, self.sess))
             print('Graph', num, 'created')
+        self.peak_metric = None
+        self.peak_metric_value = None
 
     def initialize_variables(self):
         for graph in self.population:
@@ -146,19 +162,11 @@ class LocalCluster(Generic[T], Cluster[T]):
     def get_population(self) -> List[T]:
         return self.population
 
-    def get_highest_metric_graph(self) -> T:
-        highest_graph = None
-        highest_metric = None
-        for graph in self.population:
-            if highest_graph is None:
-                highest_graph = graph
-                highest_metric = graph.get_metric()
-            else:
-                metric = graph.get_metric()
-                if metric > highest_metric:
-                    highest_graph = graph
-                    highest_metric = metric
-        return highest_graph
+    def get_peak_metric(self) -> float:
+        return self.peak_metric
+
+    def get_peak_metric_value(self):
+        return self.peak_metric_value
 
     def train(self, until_step_num: int) -> None:
         while True:
@@ -177,6 +185,11 @@ class LocalCluster(Generic[T], Cluster[T]):
                         print('Graph', graph.num, 'starting training run at step', graph.step_num)
                         graph.train()
                         print('Graph', graph.num, 'ending training run at step', graph.step_num)
+                best_graph = max(self.population, key=lambda graph: graph.get_metric())
+                best_metric = best_graph.get_metric()
+                if self.peak_metric is None or best_metric > self.peak_metric:
+                    self.peak_metric = best_metric
+                    self.peak_metric_value = best_graph.get_value()
             else:
                 break
 

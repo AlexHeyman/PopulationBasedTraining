@@ -79,8 +79,10 @@ def worker(comm: MPI.Comm, cluster_rank: int) -> None:
                     for num, new_value in new_values.items():
                         graphs[num].set_value(new_value)
                         graphs[num].explore()
+                    until_step_num = data[4]
                     for graph in graphs.values():
-                        graph.train()
+                        if graph.step_num < until_step_num:
+                            graph.train()
                 nums = data[1]
                 attributes = data[2]
                 attribute_getters = [GETTERS[attribute] for attribute in attributes]
@@ -93,8 +95,8 @@ class Cluster(PBTCluster[ConvNet]):
     A PBT Cluster that synchronously trains ConvNets, distributed over multiple
     worker processes, using MPI for Python.
 
-    A Cluster's get_population() and get_highest_metric_graph() methods return
-    copies of its ConvNets on the Cluster's own process.
+    A Cluster's get_population() method returns copies of its ConvNets on the
+    Cluster's own process.
     """
 
     sess: tf.Session
@@ -102,6 +104,7 @@ class Cluster(PBTCluster[ConvNet]):
     comm: MPI.Comm
     rank_graphs: Dict[int, List[int]]
     graph_ranks: List[int]
+    peak_metric: float
 
     def __init__(self, pop_size: int, comm: MPI.Comm, rank_devices: Dict[int, Device]) -> None:
         """
@@ -120,6 +123,8 @@ class Cluster(PBTCluster[ConvNet]):
         self.comm = comm
         self.rank_graphs = {rank: [] for rank in rank_devices.keys()}
         self.graph_ranks = []
+        self.peak_metric = None
+        self.peak_metric_value = None
         graphs_per_worker = pop_size / len(rank_devices)
         graph_num = 0
         graphs_to_make = 0
@@ -152,20 +157,11 @@ class Cluster(PBTCluster[ConvNet]):
             population.append(graph)
         return population
 
-    def get_highest_metric_graph(self) -> ConvNet:
-        attributes = self.get_attributes([Attribute.ACCURACY])
-        best_num = None
-        best_acc = None
-        for num in range(self.pop_size):
-            accuracy = attributes[num][0]
-            if best_num is None or accuracy > best_acc:
-                best_num = num
-                best_acc = accuracy
-        graph = ConvNet(best_num, self.sess)
-        best_rank = self.graph_ranks[best_num]
-        self.comm.send((Instruction.GET, [best_num], [Attribute.VALUE]), dest=best_rank)
-        graph.set_value(self.comm.recv(source=best_rank)[best_num][0])
-        return graph
+    def get_peak_metric(self) -> float:
+        return self.peak_metric
+
+    def get_peak_metric_value(self):
+        return self.peak_metric_value
 
     def _exploit_and_or_explore(self, attributes: List[Tuple[int, float]]) -> Dict[int, Any]:
         for num in range(self.pop_size):
@@ -178,12 +174,17 @@ class Cluster(PBTCluster[ConvNet]):
             worst_nums = ranked_nums[:math.ceil(0.2 * len(ranked_nums))]
             best_nums = ranked_nums[math.floor(0.8 * len(ranked_nums)):]
             best_attributes = self.get_attributes([Attribute.VALUE], best_nums)
+            best_metric = attributes[-1][1]
+            if self.peak_metric is None or best_metric > self.peak_metric:
+                self.peak_metric = best_metric
+                self.peak_metric_value = best_attributes[-1][0]
             for i in range(len(worst_nums)):
                 print('Graph', worst_nums[i], 'copying graph', best_nums[i])
                 new_values[worst_nums[i]] = best_attributes[i][0]
         return new_values
 
     def train(self, until_step_num: int) -> None:
+        trained = False
         attribute_ids = [Attribute.STEP_NUM, Attribute.ACCURACY]
         attributes = self.get_attributes(attribute_ids)
         while True:
@@ -205,14 +206,22 @@ class Cluster(PBTCluster[ConvNet]):
                 for rank, graphs in self.rank_graphs.items():
                     rank_new_values = {num: new_values[num] for num in graphs if num in new_values.keys()}
                     reqs.append(self.comm.isend(
-                        (Instruction.COPY_TRAIN_GET, graphs, attribute_ids, rank_new_values), dest=rank))
+                        (Instruction.COPY_TRAIN_GET, graphs, attribute_ids, rank_new_values, until_step_num),
+                        dest=rank))
                 for req in reqs:
                     req.wait()
                 for rank in self.rank_graphs.keys():
                     attributes_dict.update(self.comm.recv(source=rank))
+                trained = True
                 attributes = [attributes_dict[num] for num in range(self.pop_size)]
                 print('Finished training runs')
             else:
+                if trained:
+                    best_num = max(range(self.pop_size), key=lambda num: attributes[num][1])
+                    best_metric = attributes[best_num][1]
+                    if self.peak_metric is None or best_metric > self.peak_metric:
+                        self.peak_metric = best_metric
+                        self.peak_metric_value = self.get_attributes([Attribute.VALUE], [best_num])[0][0]
                 break
 
     def get_attributes(self, attribute_ids: List[Attribute], graph_nums: List[int]=None) -> List[Tuple]:
@@ -265,23 +274,34 @@ class Cluster(PBTCluster[ConvNet]):
 set_mnist_data(train('MNIST_data/'), test('MNIST_data/'))
 comm = MPI.COMM_WORLD
 if comm.Get_rank() == 0:
-    cluster = Cluster(50, comm, {rank: '/cpu:0' for rank in range(1, comm.Get_size())})
+    cluster = Cluster(40, comm, {rank: '/cpu:0' for rank in range(1, comm.Get_size())})
     cluster.initialize_variables()
     training_start = datetime.datetime.now()
     cluster.train(20000)
     print('Training time:', datetime.datetime.now() - training_start)
+    print()
+    peak_value = cluster.get_peak_metric_value()
+    print('Peak graph')
+    print('Trained for', peak_value[0], 'steps')
+    print('Accuracy:', cluster.get_peak_metric())
+    print('Hyperparameter update history:')
+    print()
+    peak_updates = []
+    update = peak_value[3]
+    while update is not None:
+        peak_updates.append(update)
+        update = update.prev
+    print(''.join(str(update) for update in reversed(peak_updates)))
     attributes = cluster.get_attributes(
         [Attribute.STEP_NUM, Attribute.UPDATE_HISTORY, Attribute.ACCURACY])
-    ranked_nums = sorted(range(len(attributes)), key=lambda num: -attributes[num][2])
-    print()
-    for num in ranked_nums:
+    for num in sorted(range(len(attributes)), key=lambda num: -attributes[num][2]):
         graph_info = attributes[num]
         print('Graph', num)
         print('Accuracy:', graph_info[2])
         print('Hyperparameter update history:')
         print()
         print(''.join(str(update) for update in graph_info[1]))
-    plot_hyperparams(attributes, 'plots/')
+    plot_hyperparams(attributes, cluster.get_peak_metric_value(), 'plots/')
     cluster.exit_workers()
 else:
     worker(comm, 0)
