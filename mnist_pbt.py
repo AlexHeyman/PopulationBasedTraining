@@ -110,15 +110,19 @@ class OptimizerHyperparameter(Hyperparameter):
 
     opt_info: List[OptimizerInfo]
     opt_index: int
+    vary_opt: bool
 
     def _set_sub_hyperparams_unused(self, unused: bool) -> None:
         for hyperparam in self.opt_info[self.opt_index].hyperparams:
             hyperparam.unused = unused
 
-    def __init__(self, graph: HyperparamsGraph, to_minimize) -> None:
+    def __init__(self, graph: HyperparamsGraph, to_minimize, vary_opt: bool) -> None:
         """
         Creates a new OptimizerHyperparameter of <graph> with Optimizers that
         can be used to minimize the TensorFlow Tensor <to_minimize>.
+
+        If <vary_opt> is True, the Optimizer used will be sampled at random and
+        can be perturbed. Otherwise, it will always be an AdamOptimizer.
         """
         super().__init__('Optimizer', graph, False)
         self.opt_info = []
@@ -138,8 +142,12 @@ class OptimizerHyperparameter(Hyperparameter):
         # AdamOptimizer
         optimizer = tf.train.AdamOptimizer(learning_rate.value)
         self.opt_info.append(OptimizerInfo(optimizer, to_minimize, [learning_rate]))
-        self.opt_index = random.randrange(len(self.opt_info))
+        if vary_opt:
+            self.opt_index = random.randrange(len(self.opt_info))
+        else:
+            self.opt_index = 3
         self._set_sub_hyperparams_unused(False)
+        self.vary_opt = vary_opt
 
     def __str__(self) -> str:
         return self.opt_info[self.opt_index].optimizer.__class__.__name__
@@ -148,16 +156,17 @@ class OptimizerHyperparameter(Hyperparameter):
         self.graph.sess.run([var.initializer for info in self.opt_info for var in info.vars])
 
     def get_value(self):
-        return (self.opt_index, self.graph.sess.run(self.opt_info[self.opt_index].vars))
+        return (self.opt_index, self.graph.sess.run(self.opt_info[self.opt_index].vars), self.vary_opt)
 
     def set_value(self, value) -> None:
-        opt_index, var_values = value
+        opt_index, var_values, vary_opt = value
         self._set_sub_hyperparams_unused(True)
         self.opt_index = opt_index
         vars = self.opt_info[opt_index].vars
         for i in range(len(vars)):
             vars[i].load(var_values[i], self.graph.sess)
         self._set_sub_hyperparams_unused(False)
+        self.vary_opt = vary_opt
 
     def _switch_to_opt(self, opt_index: int):
         self._set_sub_hyperparams_unused(True)
@@ -169,12 +178,14 @@ class OptimizerHyperparameter(Hyperparameter):
             hyperparam.unused = False
 
     def perturb(self) -> None:
-        num_opts = len(self.opt_info)
-        if num_opts >= 2:
-            self._switch_to_opt((self.opt_index + random.randrange(1, num_opts)) % num_opts)
+        if self.vary_opt:
+            num_opts = len(self.opt_info)
+            if num_opts >= 2:
+                self._switch_to_opt((self.opt_index + random.randrange(1, num_opts)) % num_opts)
 
     def resample(self) -> None:
-        self._switch_to_opt(random.randrange(len(self.opt_info)))
+        if self.vary_opt:
+            self._switch_to_opt(random.randrange(len(self.opt_info)))
 
     def get_current_minimizer(self) -> tf.Operation:
         """
@@ -187,8 +198,7 @@ class OptimizerHyperparameter(Hyperparameter):
 class ConvNet(HyperparamsGraph):
     """
     A PBT-compatible version of an MNIST convnet that trains itself to minimize
-    cross entropy with a variable optimizer, optimizer parameters, and dropout
-    keep probability.
+    cross entropy.
     """
 
     train_next: Any
@@ -198,10 +208,14 @@ class ConvNet(HyperparamsGraph):
     keep_prob: FloatHyperparameter
     accuracy: float
 
-    def __init__(self, num: int, sess: tf.Session) -> None:
+    def __init__(self, num: int, sess: tf.Session, vary_opt: bool) -> None:
         """
         Creates a new ConvNet, numbered <num> in its population, with
         associated Session <sess>.
+
+        If <vary_opt> is True, the TensorFlow Optimizer used will be sampled at
+        random and can be perturbed. Otherwise, it will always be an
+        AdamOptimizer.
 
         This method uses mnist.get_mnist_data() to obtain this ConvNet's
         training and testing data. Thus, mnist.set_mnist_data() must be called
@@ -221,7 +235,7 @@ class ConvNet(HyperparamsGraph):
         self.net = MNISTConvNet(sess, self.x, one_hot_y_, self.keep_prob.value)
         cross_entropy = tf.reduce_mean(
             tf.nn.softmax_cross_entropy_with_logits_v2(labels=one_hot_y_, logits=self.net.y))
-        self.optimizer = OptimizerHyperparameter(self, cross_entropy)
+        self.optimizer = OptimizerHyperparameter(self, cross_entropy, vary_opt)
         self.accuracy = None
         self.value = None
 

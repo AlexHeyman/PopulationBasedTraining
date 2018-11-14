@@ -18,11 +18,16 @@ class Cluster(LocalCluster[ConvNet]):
     A LocalCluster that trains ConvNets.
     """
 
-    def __init__(self, pop_size: int) -> None:
+    def __init__(self, pop_size: int, vary_opts: bool) -> None:
         """
         Creates a new Cluster with <pop_size> ConvNets.
+
+        If <vary_opts> is True, the TensorFlow Optimizers used by the ConvNets
+        will be sampled at random and can be perturbed. Otherwise, they will
+        always be AdamOptimizers.
         """
-        super().__init__(pop_size, lambda num, sess: ConvNet(num, sess))
+        print('Varying Optimizers:', vary_opts)
+        super().__init__(pop_size, lambda num, sess: ConvNet(num, sess, vary_opts))
 
     def exploit_and_or_explore(self) -> None:
         accuracies = {}
@@ -56,7 +61,7 @@ class Cluster(LocalCluster[ConvNet]):
 
 if __name__ == '__main__':
     set_mnist_data(train('MNIST_data/'), test('MNIST_data/'))
-    cluster = Cluster(40)
+    cluster = Cluster(40, True)
     cluster.initialize_variables()
     training_start = datetime.datetime.now()
     cluster.train(20000)

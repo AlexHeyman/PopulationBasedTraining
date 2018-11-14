@@ -60,11 +60,11 @@ def worker(comm: MPI.Comm, cluster_rank: int) -> None:
     and <cluster_rank> is the rank of the Cluster's process.
     """
     sess = tf.Session()
-    device, start_num, end_num = comm.recv(source=cluster_rank)
+    device, start_num, end_num, vary_opts = comm.recv(source=cluster_rank)
     with tf.device(device):
         graphs = OrderedDict()
         for num in range(start_num, end_num):
-            graphs[num] = ConvNet(num, sess)
+            graphs[num] = ConvNet(num, sess, vary_opts)
         while True:
             data = comm.recv(source=cluster_rank)
             instruction = data[0]
@@ -106,9 +106,13 @@ class Cluster(PBTCluster[ConvNet]):
     graph_ranks: List[int]
     peak_metric: float
 
-    def __init__(self, pop_size: int, comm: MPI.Comm, rank_devices: Dict[int, Device]) -> None:
+    def __init__(self, pop_size: int, vary_opts: bool, comm: MPI.Comm, rank_devices: Dict[int, Device]) -> None:
         """
         Creates a new Cluster with <pop_size> ConvNets.
+
+        If <vary_opts> is True, the TensorFlow Optimizers used by the ConvNets
+        will be sampled at random and can be perturbed. Otherwise, they will
+        always be AdamOptimizers.
 
         <comm> is the MPI Comm that this Cluster and its worker processes use
         to communicate. <rank_devices> is a dictionary in which each key is a
@@ -118,6 +122,7 @@ class Cluster(PBTCluster[ConvNet]):
         worker(<comm>, <rank>), where <rank> is the rank of this Cluster's
         process, must be called independently in each worker process.
         """
+        print('Varying Optimizers:', vary_opts)
         self.sess = tf.Session()
         self.pop_size = pop_size
         self.comm = comm
@@ -135,7 +140,7 @@ class Cluster(PBTCluster[ConvNet]):
             graph_num = min(graph_num + math.ceil(graphs_to_make), pop_size)
             self.rank_graphs[rank].extend(range(start_num, graph_num))
             self.graph_ranks.extend(rank for _ in range(start_num, graph_num))
-            reqs.append(comm.isend((device, start_num, graph_num), dest=rank))
+            reqs.append(comm.isend((device, start_num, graph_num, vary_opts), dest=rank))
             graphs_to_make -= (graph_num - start_num)
         for req in reqs:
             req.wait()
@@ -274,7 +279,7 @@ class Cluster(PBTCluster[ConvNet]):
 set_mnist_data(train('MNIST_data/'), test('MNIST_data/'))
 comm = MPI.COMM_WORLD
 if comm.Get_rank() == 0:
-    cluster = Cluster(40, comm, {rank: '/cpu:0' for rank in range(1, comm.Get_size())})
+    cluster = Cluster(40, True, comm, {rank: '/cpu:0' for rank in range(1, comm.Get_size())})
     cluster.initialize_variables()
     training_start = datetime.datetime.now()
     cluster.train(20000)
