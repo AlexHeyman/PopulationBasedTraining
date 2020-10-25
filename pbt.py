@@ -3,7 +3,7 @@ An implementation of population-based training of neural networks for
 TensorFlow.
 """
 
-from typing import List, Callable, TypeVar, Generic
+from typing import List, Callable, TypeVar, Generic, Optional
 from collections import OrderedDict
 import os
 import tensorflow as tf
@@ -24,10 +24,10 @@ class Graph:
     """
 
     num: int
-    sess: tf.Session
+    sess: tf.compat.v1.Session
     step_num: int
 
-    def __init__(self, num: int, sess: tf.Session) -> None:
+    def __init__(self, num: int, sess: tf.compat.v1.Session) -> None:
         """
         Creates a new Graph, numbered <num> in its population, with associated
         Session <sess>.
@@ -39,7 +39,14 @@ class Graph:
     def initialize_variables(self) -> None:
         """
         Runs the initializer Operations of all of the TensorFlow Variables that
-        this Graph created in its initializer.
+        this Graph uses.
+        """
+        raise NotImplementedError
+
+    def get_train_variables(self) -> List[tf.compat.v1.Variable]:
+        """
+        Returns all of the TensorFlow Variables that this Graph can manipulate
+        during training.
         """
         raise NotImplementedError
 
@@ -133,11 +140,11 @@ class LocalCluster(Generic[T], Cluster[T]):
     A Cluster that simulates synchronous training with a single local thread.
     """
 
-    sess: tf.Session
+    sess: tf.compat.v1.Session
     population: List[T]
-    peak_metric: float
+    peak_metric: Optional[float]
 
-    def __init__(self, pop_size: int, graph_maker: Callable[[int, tf.Session], T]) -> None:
+    def __init__(self, pop_size: int, graph_maker: Callable[[int, tf.compat.v1.Session], T]) -> None:
         """
         Creates a new LocalCluster with <pop_size> Graphs returned by
         <graph_maker> as its population.
@@ -146,7 +153,7 @@ class LocalCluster(Generic[T], Cluster[T]):
         LocalCluster's population. <graph_maker> is a Callable that returns a
         new T with the specified number and Session each time it is called.
         """
-        self.sess = tf.Session()
+        self.sess = tf.compat.v1.Session()
         self.population = []
         for num in range(pop_size):
             self.population.append(graph_maker(num, self.sess))
@@ -299,9 +306,9 @@ class HyperparamsGraph(Graph):
     """
 
     hyperparams: List[Hyperparameter]
-    last_update: HyperparamsUpdate
+    last_update: Optional[HyperparamsUpdate]
 
-    def __init__(self, num: int, sess: tf.Session) -> None:
+    def __init__(self, num: int, sess: tf.compat.v1.Session) -> None:
         """
         Creates a new HyperparamsGraph, numbered <num> in its population, with
         associated Session <sess>.

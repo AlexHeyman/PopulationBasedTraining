@@ -7,9 +7,9 @@ reported at the end.
 
 import math
 import datetime
-from tensorflow.models.official.mnist.dataset import train, test
+import tensorflow as tf
 from pbt import LocalCluster
-from mnist import set_mnist_data
+from mnist import load_mnist_data
 from mnist_pbt import ConvNet, plot_hyperparams
 
 
@@ -60,7 +60,8 @@ class Cluster(LocalCluster[ConvNet]):
 
 
 if __name__ == '__main__':
-    set_mnist_data(train('MNIST_data/'), test('MNIST_data/'))
+    tf.compat.v1.disable_eager_execution()
+    load_mnist_data()
     cluster = Cluster(40, True)
     cluster.initialize_variables()
     training_start = datetime.datetime.now()

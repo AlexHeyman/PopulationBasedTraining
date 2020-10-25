@@ -7,22 +7,23 @@ This file must be run with the following command:
 mpiexec -n <m> python </path/to/>mnist_pbt_sync.py
 
 where <m>, an integer no less than 2, is the number of processes to use.
+
+This file is intended for use with mpi4py v3.0.3.
 """
 
-from typing import Union, Any, List, Tuple, Dict
+from typing import Any, List, Tuple, Dict, Optional
 from enum import Enum, auto
 from collections import OrderedDict
 import math
 from mpi4py import MPI
 import datetime
 import tensorflow as tf
-from tensorflow.models.official.mnist.dataset import train, test
 from pbt import Cluster as PBTCluster
-from mnist import set_mnist_data
+from mnist import load_mnist_data
 from mnist_pbt import ConvNet, plot_hyperparams
 
 
-Device = Union[str, None]
+Device = Optional[str]
 
 
 class Attribute(Enum):
@@ -59,9 +60,9 @@ def worker(comm: MPI.Comm, cluster_rank: int) -> None:
     <comm> is the MPI Comm that the Cluster and its workers use to communicate,
     and <cluster_rank> is the rank of the Cluster's process.
     """
-    sess = tf.Session()
+    sess = tf.compat.v1.Session()
     device, start_num, end_num, vary_opts = comm.recv(source=cluster_rank)
-    with tf.device(device):
+    with tf.compat.v1.device(device):
         graphs = OrderedDict()
         for num in range(start_num, end_num):
             graphs[num] = ConvNet(num, sess, vary_opts)
@@ -99,12 +100,13 @@ class Cluster(PBTCluster[ConvNet]):
     Cluster's own process.
     """
 
-    sess: tf.Session
+    sess: tf.compat.v1.Session
     pop_size: int
+    vary_opts: bool
     comm: MPI.Comm
     rank_graphs: Dict[int, List[int]]
     graph_ranks: List[int]
-    peak_metric: float
+    peak_metric: Optional[float]
 
     def __init__(self, pop_size: int, vary_opts: bool, comm: MPI.Comm, rank_devices: Dict[int, Device]) -> None:
         """
@@ -123,8 +125,9 @@ class Cluster(PBTCluster[ConvNet]):
         process, must be called independently in each worker process.
         """
         print('Varying Optimizers:', vary_opts)
-        self.sess = tf.Session()
+        self.sess = tf.compat.v1.Session()
         self.pop_size = pop_size
+        self.vary_opts = vary_opts
         self.comm = comm
         self.rank_graphs = {rank: [] for rank in rank_devices.keys()}
         self.graph_ranks = []
@@ -157,7 +160,7 @@ class Cluster(PBTCluster[ConvNet]):
         attributes = self.get_attributes([Attribute.VALUE])
         population = []
         for num in range(self.pop_size):
-            graph = ConvNet(num, self.sess)
+            graph = ConvNet(num, self.sess, self.vary_opts)
             graph.set_value(attributes[num][0])
             population.append(graph)
         return population
@@ -229,7 +232,7 @@ class Cluster(PBTCluster[ConvNet]):
                         self.peak_metric_value = self.get_attributes([Attribute.VALUE], [best_num])[0][0]
                 break
 
-    def get_attributes(self, attribute_ids: List[Attribute], graph_nums: List[int]=None) -> List[Tuple]:
+    def get_attributes(self, attribute_ids: List[Attribute], graph_nums: List[int] = None) -> List[Tuple]:
         """
         Returns the attributes specified by <attribute_ids> of this Cluster's
         ConvNets with numbers <graph_nums>.
@@ -276,7 +279,8 @@ class Cluster(PBTCluster[ConvNet]):
             req.wait()
 
 
-set_mnist_data(train('MNIST_data/'), test('MNIST_data/'))
+tf.compat.v1.disable_eager_execution()
+load_mnist_data()
 comm = MPI.COMM_WORLD
 if comm.Get_rank() == 0:
     cluster = Cluster(40, True, comm, {rank: '/cpu:0' for rank in range(1, comm.Get_size())})

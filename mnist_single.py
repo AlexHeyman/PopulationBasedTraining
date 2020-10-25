@@ -5,30 +5,37 @@ its accuracy and the time spent training it.
 
 import datetime
 import tensorflow as tf
-from mnist import ConvNet, MNIST_TRAIN_SIZE, MNIST_TEST_SIZE, MNIST_TEST_BATCH_SIZE,\
-    get_mnist_data, set_mnist_data
-from tensorflow.models.official.mnist.dataset import train, test
+from mnist import ConvNet, MNIST_TRAIN_SIZE, MNIST_TEST_SIZE,\
+    MNIST_TRAIN_BATCH_SIZE, MNIST_TEST_BATCH_SIZE, get_mnist_data, load_mnist_data
 
 
 if __name__ == '__main__':
-    set_mnist_data(train('MNIST_data/'), test('MNIST_data/'))
+    tf.compat.v1.disable_eager_execution()
+    load_mnist_data()
     train_data, test_data = get_mnist_data()
-    train_next = train_data.shuffle(MNIST_TRAIN_SIZE).batch(50).repeat().make_one_shot_iterator().get_next()
-    test_iterator = test_data.batch(MNIST_TEST_BATCH_SIZE).make_initializable_iterator()
+    batch_type = (tf.float32, tf.uint8)
+    batch_shape = (tf.TensorShape([None, 28, 28]), tf.TensorShape([None]))
+    train_iterator = tf.compat.v1.data.Iterator.from_structure(batch_type, batch_shape)
+    train_initializer = tf.compat.v1.data.Iterator.make_initializer(
+        train_iterator, train_data.shuffle(MNIST_TRAIN_SIZE).batch(MNIST_TRAIN_BATCH_SIZE).repeat())
+    train_next = train_iterator.get_next()
+    test_iterator = tf.compat.v1.data.Iterator.from_structure(batch_type, batch_shape)
+    test_initializer = tf.compat.v1.data.Iterator.make_initializer(
+        test_iterator, test_data.batch(MNIST_TEST_BATCH_SIZE))
     test_next = test_iterator.get_next()
 
-    sess = tf.Session()
+    sess = tf.compat.v1.Session()
 
-    x = tf.placeholder(tf.float32, [None, 784])
-    y_ = tf.placeholder(tf.int32, [None])
-    one_hot_y_ = tf.one_hot(y_, 10)
-    keep_prob = tf.placeholder(tf.float32)
+    x = tf.compat.v1.placeholder(tf.float32, [None, 28, 28])
+    y_ = tf.compat.v1.placeholder(tf.int32, [None])
+    one_hot_y_ = tf.compat.v1.one_hot(y_, 10)
+    keep_prob = tf.compat.v1.placeholder(tf.float32)
 
     net = ConvNet(sess, x, one_hot_y_, keep_prob)
-    cross_entropy = tf.reduce_mean(
-        tf.nn.softmax_cross_entropy_with_logits_v2(labels=one_hot_y_, logits=net.y))
-    optimizer = tf.train.AdamOptimizer(1e-4)
-    train_step = optimizer.minimize(cross_entropy)
+    cross_entropy = tf.compat.v1.reduce_mean(
+        tf.compat.v1.nn.softmax_cross_entropy_with_logits_v2(labels=one_hot_y_, logits=net.y))
+    optimizer = tf.compat.v1.train.AdamOptimizer(1e-4)
+    train_step = optimizer.minimize(cross_entropy, var_list=net.vars)
 
     net.initialize_variables()
     sess.run([var.initializer for var in optimizer.variables()])
@@ -44,7 +51,7 @@ if __name__ == '__main__':
         if training_start is not None:
             training_time += datetime.datetime.now() - training_start
         print('Training time:', str(training_time))
-        sess.run(test_iterator.initializer)
+        sess.run(test_initializer)
         size_accuracy = 0
         try:
             while True:
@@ -59,6 +66,7 @@ if __name__ == '__main__':
         print('Accuracy: %a' % (size_accuracy / MNIST_TEST_SIZE))
         training_start = datetime.datetime.now()
 
+    sess.run(train_initializer)
     step_num = 0
     while step_num < 20000:
         if step_num % 100 == 0:
